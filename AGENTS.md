@@ -13,8 +13,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "f
 
 - 提交信息用中文，格式 `类型: 摘要`，类型取 `feat / fix / docs / art / chore`
 - 摘要写「这轮改了什么、验证结果」，一行说清
-- 远程是 GitHub `https://github.com/liangyi231/game.git`（分支 `main`）。提交后尝试 `git push`
-- 若 push 因凭据失败（本机 GCM 无缓存），**保留本地提交**并在回复里提醒作者手动 push 一次；不要索要账号、密码或 Token
+- 远程是 GitHub `https://github.com/liangyi231/game.git`（分支 `main`），但作者要求**只提交到本地，不要自动 push**
+- 需要同步远程时由作者自己执行 `git push`；AI 不要主动推送，也不要索要账号、密码或 Token
 - 不要手动 `git add .godot` 之类：`.gitignore` 已排除缓存与本机工具链
 
 ## 工程约定
