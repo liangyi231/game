@@ -11,6 +11,11 @@ const PLAYER_TEXTURE := "res://art/characters/whale_girl.png"
 const CARD_ART := "res://art/ui/card_face.jpg"
 const CARD_SHADER := "res://art/ui/card_round.gdshader"
 const BG_ART := "res://art/bg/night_sky.jpg"
+const ICON_SHIELD := "res://art/ui/icon_shield.svg"
+const ICON_POISON := "res://art/ui/icon_poison.svg"
+const ICON_VULNERABLE := "res://art/ui/icon_vulnerable.svg"
+const ICON_WEAK := "res://art/ui/icon_weak.svg"
+const HP_BAR_SIZE := Vector2(176.0, 15.0)
 
 const POSE_TIME := 0.1
 ## 背景放大倍率（1.0 = 刚好铺满；越大越近）
@@ -44,8 +49,17 @@ var ground_fill: TextureRect
 var _shake_tween: Tween
 var player_pic: TextureRect
 var enemy_pic: TextureRect
-var player_head: Label
-var enemy_head: Label
+var player_head_panel: VBoxContainer
+var enemy_head_panel: VBoxContainer
+var player_name_label: Label
+var enemy_name_label: Label
+var player_hp_fill: Panel
+var enemy_hp_fill: Panel
+var player_hp_text: Label
+var enemy_hp_text: Label
+var player_icon_row: HBoxContainer
+var enemy_icon_row: HBoxContainer
+var enemy_intent_label: Label
 var log_panel: PanelContainer
 var log_box: RichTextLabel
 var hand_area: Control
@@ -171,23 +185,22 @@ func _build_ui() -> void:
 	add_child(enemy_pic)
 
 	# --- 头顶名字 / 血量 / 意图 ---
-	player_head = Label.new()
-	player_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	player_head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	player_head.add_theme_font_size_override("font_size", 16)
-	player_head.add_theme_color_override("font_color", Color("#bfe9ff"))
-	player_head.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	player_head.add_theme_constant_override("outline_size", 6)
-	add_child(player_head)
+	var ph := _build_head_panel(false, Color("#bfe9ff"))
+	player_head_panel = ph["panel"]
+	player_name_label = ph["name"]
+	player_hp_fill = ph["fill"]
+	player_hp_text = ph["text"]
+	player_icon_row = ph["icons"]
+	add_child(player_head_panel)
 
-	enemy_head = Label.new()
-	enemy_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	enemy_head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	enemy_head.add_theme_font_size_override("font_size", 16)
-	enemy_head.add_theme_color_override("font_color", Color("#ffd0d0"))
-	enemy_head.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	enemy_head.add_theme_constant_override("outline_size", 6)
-	add_child(enemy_head)
+	var eh := _build_head_panel(true, Color("#ffd0d0"))
+	enemy_head_panel = eh["panel"]
+	enemy_name_label = eh["name"]
+	enemy_hp_fill = eh["fill"]
+	enemy_hp_text = eh["text"]
+	enemy_icon_row = eh["icons"]
+	enemy_intent_label = eh["intent"]
+	add_child(enemy_head_panel)
 
 	# --- 战斗日志（顶部半透明面板） ---
 	log_panel = PanelContainer.new()
@@ -314,6 +327,146 @@ func _build_ui() -> void:
 	add_child(fx_layer)
 
 
+## 角色头顶信息面板：名字 + 红色生命条 + 图标行（盾/状态）+（敌人）意图
+func _build_head_panel(is_enemy: bool, name_color: Color) -> Dictionary:
+	var panel := VBoxContainer.new()
+	panel.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_theme_constant_override("separation", 2)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.size = Vector2(240.0, 96.0)
+
+	var name_label := Label.new()
+	name_label.text = "奶龙" if is_enemy else "鲸娘"
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 15)
+	name_label.add_theme_color_override("font_color", name_color)
+	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	name_label.add_theme_constant_override("outline_size", 6)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(name_label)
+
+	# 红色生命条
+	var bar_holder := CenterContainer.new()
+	bar_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_holder.custom_minimum_size = HP_BAR_SIZE
+	panel.add_child(bar_holder)
+	var bar := Control.new()
+	bar.custom_minimum_size = HP_BAR_SIZE
+	bar.size = HP_BAR_SIZE
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_holder.add_child(bar)
+	var bar_bg := Panel.new()
+	var bg_sb := StyleBoxFlat.new()
+	bg_sb.bg_color = Color(0.04, 0.05, 0.08, 0.92)
+	bg_sb.set_corner_radius_all(6)
+	bg_sb.border_color = Color(0, 0, 0, 0.85)
+	bg_sb.set_border_width_all(1)
+	bar_bg.add_theme_stylebox_override("panel", bg_sb)
+	bar_bg.size = HP_BAR_SIZE
+	bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(bar_bg)
+	var fill := Panel.new()
+	var fill_sb := StyleBoxFlat.new()
+	fill_sb.bg_color = Color(0.80, 0.16, 0.18, 1.0)
+	fill_sb.set_corner_radius_all(5)
+	fill.add_theme_stylebox_override("panel", fill_sb)
+	fill.position = Vector2(2, 2)
+	fill.size = HP_BAR_SIZE - Vector2(4, 4)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(fill)
+	var hp_text := Label.new()
+	hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp_text.size = HP_BAR_SIZE
+	hp_text.add_theme_font_size_override("font_size", 12)
+	hp_text.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	hp_text.add_theme_constant_override("outline_size", 5)
+	hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(hp_text)
+
+	# 图标行（格挡盾牌 + 状态图标，数值在图标右下角）
+	var icons := HBoxContainer.new()
+	icons.alignment = BoxContainer.ALIGNMENT_CENTER
+	icons.add_theme_constant_override("separation", 6)
+	icons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icons.custom_minimum_size = Vector2(0, 42)
+	panel.add_child(icons)
+
+	var intent := Label.new()
+	intent.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	intent.add_theme_font_size_override("font_size", 13)
+	intent.add_theme_color_override("font_color", Color("#ffd479"))
+	intent.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	intent.add_theme_constant_override("outline_size", 5)
+	intent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intent.visible = is_enemy
+	panel.add_child(intent)
+
+	return {
+		"panel": panel,
+		"name": name_label,
+		"fill": fill,
+		"text": hp_text,
+		"icons": icons,
+		"intent": intent,
+	}
+
+
+## 状态图标：图标 + 右下角数值
+func _make_status_icon(tex_path: String, value: int, color: Color) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(46.0, 42.0)
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon := TextureRect.new()
+	icon.texture = load(tex_path)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size = Vector2(36.0, 36.0)
+	icon.position = Vector2(2.0, 1.0)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(icon)
+	var num := Label.new()
+	num.text = str(value)
+	num.add_theme_font_size_override("font_size", 16)
+	num.add_theme_color_override("font_color", color)
+	num.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	num.add_theme_constant_override("outline_size", 6)
+	num.position = Vector2(22.0, 20.0)
+	num.size = Vector2(22.0, 20.0)
+	num.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(num)
+	return holder
+
+
+## 重建图标行：格挡 > 易伤 > 虚弱 > 中毒
+func _rebuild_status_icons(row: HBoxContainer, block: int, vuln: int, weak: int, poison: int) -> void:
+	if row == null:
+		return
+	for child in row.get_children():
+		child.queue_free()
+	if block > 0:
+		row.add_child(_make_status_icon(ICON_SHIELD, block, Color("#dff2ff")))
+	if vuln > 0:
+		row.add_child(_make_status_icon(ICON_VULNERABLE, vuln, Color("#ff9d9d")))
+	if weak > 0:
+		row.add_child(_make_status_icon(ICON_WEAK, weak, Color("#d3b0ff")))
+	if poison > 0:
+		row.add_child(_make_status_icon(ICON_POISON, poison, Color("#9dffa0")))
+
+
+## 更新生命条填充宽度与颜色（血越少越亮红）
+func _set_hp_ratio(fill: Panel, ratio: float) -> void:
+	if fill == null:
+		return
+	var r := clampf(ratio, 0.0, 1.0)
+	fill.size = Vector2(maxf(2.0, (HP_BAR_SIZE.x - 4.0) * r), HP_BAR_SIZE.y - 4.0)
+	var sb := fill.get_theme_stylebox("panel") as StyleBoxFlat
+	if sb != null:
+		var low := 1.0 - r
+		sb.bg_color = Color(0.80, 0.16, 0.18, 1.0).lerp(Color(1.0, 0.34, 0.20, 1.0), low * 0.85)
+
+
 # ---------------------------------------------------------------- 布局
 
 func _layout_stage() -> void:
@@ -354,16 +507,16 @@ func _layout_stage() -> void:
 	enemy_pic.position = _enemy_rest_pos
 	enemy_pic.scale = Vector2.ONE
 
-	# 头顶信息
-	player_head.size = Vector2(CHAR_SIZE.x + 160.0, 62.0)
-	player_head.position = Vector2(
-		player_pic.position.x + CHAR_SIZE.x * 0.5 - player_head.size.x * 0.5,
-		player_pic.position.y - 60.0
+	# 头顶信息面板（名字 + 生命条 + 图标行）
+	player_head_panel.size = Vector2(240.0, 106.0)
+	player_head_panel.position = Vector2(
+		player_pic.position.x + CHAR_SIZE.x * 0.5 - 120.0,
+		player_pic.position.y - 110.0
 	)
-	enemy_head.size = Vector2(CHAR_SIZE.x + 220.0, 92.0)
-	enemy_head.position = Vector2(
-		enemy_pic.position.x + CHAR_SIZE.x * 0.5 - enemy_head.size.x * 0.5,
-		enemy_pic.position.y - 90.0
+	enemy_head_panel.size = Vector2(240.0, 128.0)
+	enemy_head_panel.position = Vector2(
+		enemy_pic.position.x + CHAR_SIZE.x * 0.5 - 120.0,
+		enemy_pic.position.y - 134.0
 	)
 
 	# 日志面板（顶部居中）
@@ -529,18 +682,21 @@ func _refresh() -> void:
 		return
 	_refresh_in_frame = true
 	_reset_refresh_flag.call_deferred()
-	player_head.text = "鲸娘\n生命 %d / %d　格挡 %d\n%s" % [
-		state.player_hp, state.PLAYER_MAX_HP, state.player_block, state.player_status_text()
-	]
+	# 头顶信息：生命条 + 图标行
+	player_name_label.text = "鲸娘"
+	enemy_name_label.text = "奶龙"
+	player_hp_text.text = "%d / %d" % [maxi(state.player_hp, 0), state.PLAYER_MAX_HP]
+	enemy_hp_text.text = "%d / %d" % [maxi(state.enemy_hp, 0), state.ENEMY_MAX_HP]
+	_set_hp_ratio(player_hp_fill, float(state.player_hp) / float(state.PLAYER_MAX_HP))
+	_set_hp_ratio(enemy_hp_fill, float(state.enemy_hp) / float(state.ENEMY_MAX_HP))
+	_rebuild_status_icons(player_icon_row, state.player_block, state.player_vulnerable, state.player_weak, state.player_poison)
+	_rebuild_status_icons(enemy_icon_row, state.enemy_block, state.enemy_vulnerable, state.enemy_weak, state.enemy_poison)
 	var it := state.intent()
 	var intent_value := int(it.get("value", 0))
 	var intent_text := "意图：%s（格挡 +%d）" % [str(it.get("name", "")), intent_value]
 	if str(it.get("type", "")) == "attack":
 		intent_text = "意图：%s（%d 伤害）" % [str(it.get("name", "")), intent_value]
-	enemy_head.text = "奶龙\n生命 %d / %d　格挡 %d\n%s\n%s" % [
-		state.enemy_hp, state.ENEMY_MAX_HP, state.enemy_block,
-		state.enemy_status_text(), intent_text
-	]
+	enemy_intent_label.text = intent_text
 	energy_label.text = "大米饭 %d / %d" % [state.energy, state.MAX_ENERGY]
 	turn_label.text = "第 %d 回合 · 抽牌堆 %d · 弃牌堆 %d" % [
 		state.turn, state.draw_pile.size(), state.discard_pile.size()
