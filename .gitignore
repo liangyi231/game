@@ -1,0 +1,19 @@
+# Godot 4 导入缓存 / 导出产物
+.godot/
+export_presets.cfg
+export.cfg
+
+# DSH 本机工具链（含绝对路径，不入库）
+.dsh-godot-ai-mcp/
+.dsh-pilot/
+
+# 音频分离 / 临时目录
+audio/separated/
+.tmp_audio/
+.tmp2/
+
+# OS / 编辑器杂项
+Thumbs.db
+Desktop.ini
+*.tmp
+*.log

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#0f1c2f"/>
+  <ellipse cx="58" cy="64" rx="34" ry="22" fill="#ffb347"/>
+  <path d="M92 64 L118 42 L112 64 L118 86 Z" fill="#ff8c42"/>
+  <circle cx="40" cy="58" r="5" fill="#0f1c2f"/>
+</svg>

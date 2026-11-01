@@ -1,0 +1,683 @@
+extends Control
+## 卡牌战斗界面。UI 全部代码构建 + 绝对定位，让角色能站在背景草坪线上。
+## 手牌为扇形排布：悬停时整张牌平滑凸起（带旋转回正），并在牌上方浮出效果面板。
+
+const CardDB := preload("res://scripts/cards/card_db.gd")
+const BattleState := preload("res://scripts/battle/battle_state.gd")
+
+const ENEMY_IDLE_TEXTURE := "res://art/enemies/nailong_idle.png"
+const ENEMY_ACTION_TEXTURE := "res://art/enemies/nailong_action.png"
+const PLAYER_TEXTURE := "res://art/characters/whale_girl.png"
+const CARD_ART := "res://art/ui/card_face.jpg"
+const BG_ART := "res://art/bg/night_sky.jpg"
+
+const POSE_TIME := 0.1
+## 背景放大倍率（1.0 = 刚好铺满；越大越近）
+const BG_ZOOM := 1.12
+## 背景图里草坪线所在的纵向比例（0=顶部 1=底部）
+const GRASS_RATIO := 0.872
+## 草坪线在屏幕上的高度比例（角色脚底落在这里）
+const GRASS_SCREEN_RATIO := 0.72
+## 角色显示尺寸（比之前缩小）
+const CHAR_SIZE := Vector2(200, 230)
+
+const CARD_SIZE := Vector2(140, 184)
+const HAND_AREA_HEIGHT := 250.0
+const FAN_SPREAD_DEG := 12.0
+const HOVER_LIFT := 54.0
+const HOVER_SCALE := 1.14
+const HOVER_TIME := 0.2
+
+var state: BattleState
+
+var bg: TextureRect
+var player_pic: TextureRect
+var enemy_pic: TextureRect
+var player_head: Label
+var enemy_head: Label
+var log_panel: PanelContainer
+var log_box: RichTextLabel
+var hand_area: Control
+var bottom_bar: HBoxContainer
+var energy_label: Label
+var turn_label: Label
+var result_label: Label
+var end_turn_button: Button
+var restart_button: Button
+var card_tip: PanelContainer
+var card_tip_label: RichTextLabel
+var fx_layer: Control
+
+var _card_nodes: Array[Button] = []
+var _card_base: Dictionary = {}
+var _enemy_rest_pos := Vector2.ZERO
+var _pose_tween: Tween
+var _busy := false
+
+
+func _ready() -> void:
+	_apply_font()
+	_build_ui()
+	state = BattleState.new()
+	state.logged.connect(_on_log)
+	state.changed.connect(_refresh)
+	state.battle_over.connect(_on_battle_over)
+	state.damaged.connect(_on_damaged)
+	_start_battle()
+	_layout_stage.call_deferred()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_layout_stage.call_deferred()
+
+
+func _apply_font() -> void:
+	var cjk := SystemFont.new()
+	cjk.font_names = PackedStringArray([
+		"Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "Noto Sans CJK SC"
+	])
+	var t := Theme.new()
+	t.default_font = cjk
+	t.default_font_size = 18
+	theme = t
+
+
+# ---------------------------------------------------------------- UI 构建
+
+func _build_ui() -> void:
+	# 背景：像素夜景（尺寸由 _layout_stage 按放大倍率计算）
+	bg = TextureRect.new()
+	bg.texture = load(BG_ART)
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg)
+
+	var bg_shade := ColorRect.new()
+	bg_shade.color = Color(0.02, 0.04, 0.09, 0.34)
+	bg_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg_shade)
+
+	# --- 角色立绘 ---
+	player_pic = TextureRect.new()
+	player_pic.texture = load(PLAYER_TEXTURE)
+	player_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	player_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	player_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(player_pic)
+
+	enemy_pic = TextureRect.new()
+	enemy_pic.texture = load(ENEMY_IDLE_TEXTURE)
+	enemy_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	enemy_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	enemy_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(enemy_pic)
+
+	# --- 头顶名字 / 血量 / 意图 ---
+	player_head = Label.new()
+	player_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	player_head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	player_head.add_theme_font_size_override("font_size", 16)
+	player_head.add_theme_color_override("font_color", Color("#bfe9ff"))
+	player_head.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	player_head.add_theme_constant_override("outline_size", 6)
+	add_child(player_head)
+
+	enemy_head = Label.new()
+	enemy_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	enemy_head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	enemy_head.add_theme_font_size_override("font_size", 16)
+	enemy_head.add_theme_color_override("font_color", Color("#ffd0d0"))
+	enemy_head.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	enemy_head.add_theme_constant_override("outline_size", 6)
+	add_child(enemy_head)
+
+	# --- 战斗日志（顶部半透明面板） ---
+	log_panel = PanelContainer.new()
+	var log_style := StyleBoxFlat.new()
+	log_style.bg_color = Color(0.02, 0.05, 0.10, 0.55)
+	log_style.set_corner_radius_all(10)
+	log_style.set_content_margin_all(10)
+	log_panel.add_theme_stylebox_override("panel", log_style)
+	add_child(log_panel)
+	log_box = RichTextLabel.new()
+	log_box.bbcode_enabled = true
+	log_box.scroll_following = true
+	log_box.add_theme_font_size_override("normal_font_size", 15)
+	log_panel.add_child(log_box)
+
+	# --- 手牌区（扇形） ---
+	hand_area = Control.new()
+	hand_area.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(hand_area)
+
+	# --- 底部操作栏 ---
+	bottom_bar = HBoxContainer.new()
+	bottom_bar.add_theme_constant_override("separation", 14)
+	add_child(bottom_bar)
+	energy_label = Label.new()
+	energy_label.add_theme_font_size_override("font_size", 22)
+	energy_label.add_theme_color_override("font_color", Color("#ffd479"))
+	bottom_bar.add_child(energy_label)
+	turn_label = Label.new()
+	turn_label.add_theme_font_size_override("font_size", 15)
+	turn_label.add_theme_color_override("font_color", Color("#9fb3c8"))
+	bottom_bar.add_child(turn_label)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_bar.add_child(spacer)
+	var hint := Label.new()
+	hint.text = "F11 切换全屏"
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.add_theme_color_override("font_color", Color("#5c7896"))
+	bottom_bar.add_child(hint)
+	restart_button = Button.new()
+	restart_button.text = "重新开始"
+	restart_button.custom_minimum_size = Vector2(130, 46)
+	restart_button.visible = false
+	restart_button.pressed.connect(_on_restart)
+	bottom_bar.add_child(restart_button)
+	end_turn_button = Button.new()
+	end_turn_button.text = "结束回合"
+	end_turn_button.custom_minimum_size = Vector2(150, 46)
+	end_turn_button.pressed.connect(_on_end_turn)
+	bottom_bar.add_child(end_turn_button)
+
+	# --- 结果 ---
+	result_label = Label.new()
+	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	result_label.add_theme_font_size_override("font_size", 34)
+	result_label.visible = false
+	add_child(result_label)
+
+	# --- 卡牌效果浮窗（最上层，压住手牌） ---
+	card_tip = PanelContainer.new()
+	card_tip.visible = false
+	card_tip.z_index = 1000
+	card_tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tip_style := StyleBoxFlat.new()
+	tip_style.bg_color = Color(0.03, 0.06, 0.12, 0.97)
+	tip_style.border_color = Color(0.72, 0.60, 0.35, 1.0)
+	tip_style.set_border_width_all(2)
+	tip_style.set_corner_radius_all(8)
+	tip_style.set_content_margin_all(12)
+	card_tip.add_theme_stylebox_override("panel", tip_style)
+	add_child(card_tip)
+	card_tip_label = RichTextLabel.new()
+	card_tip_label.bbcode_enabled = true
+	card_tip_label.fit_content = true
+	card_tip_label.scroll_active = false
+	card_tip_label.custom_minimum_size = Vector2(380, 0)
+	card_tip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_tip.add_child(card_tip_label)
+
+	# --- 伤害数字所在的特效层（压在手牌之上、浮窗之下） ---
+	fx_layer = Control.new()
+	fx_layer.z_index = 900
+	fx_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fx_layer)
+
+
+# ---------------------------------------------------------------- 布局
+
+func _layout_stage() -> void:
+	if bg == null or player_pic == null:
+		return
+	var w := size.x
+	var h := size.y
+	if w <= 0.0 or h <= 0.0:
+		return
+
+	# 背景按 cover 放大；让草坪线落在指定屏幕高度，人物脚底对齐它
+	var tex := bg.texture
+	if tex == null:
+		return
+	var img_size := tex.get_size()
+	var scale := maxf(w / img_size.x, h / img_size.y) * BG_ZOOM
+	bg.size = img_size * scale
+	var grass_target := h * GRASS_SCREEN_RATIO
+	bg.position = Vector2((w - bg.size.x) * 0.5, grass_target - bg.size.y * GRASS_RATIO)
+	var grass_y := grass_target
+
+	# 角色：脚底落在草坪线上
+	player_pic.size = CHAR_SIZE
+	player_pic.position = Vector2(w * 0.24 - CHAR_SIZE.x * 0.5, grass_y - CHAR_SIZE.y)
+	enemy_pic.size = CHAR_SIZE
+	enemy_pic.position = Vector2(w * 0.76 - CHAR_SIZE.x * 0.5, grass_y - CHAR_SIZE.y)
+	enemy_pic.pivot_offset = Vector2(CHAR_SIZE.x * 0.5, CHAR_SIZE.y)
+	_enemy_rest_pos = enemy_pic.position
+	# 初始化阶段姿势 tween 可能把敌人拉到 (0,0)，这里强制归位
+	if _pose_tween != null and _pose_tween.is_valid():
+		_pose_tween.kill()
+	enemy_pic.position = _enemy_rest_pos
+	enemy_pic.scale = Vector2.ONE
+
+	# 头顶信息
+	player_head.size = Vector2(CHAR_SIZE.x + 160.0, 62.0)
+	player_head.position = Vector2(
+		player_pic.position.x + CHAR_SIZE.x * 0.5 - player_head.size.x * 0.5,
+		player_pic.position.y - 60.0
+	)
+	enemy_head.size = Vector2(CHAR_SIZE.x + 220.0, 92.0)
+	enemy_head.position = Vector2(
+		enemy_pic.position.x + CHAR_SIZE.x * 0.5 - enemy_head.size.x * 0.5,
+		enemy_pic.position.y - 90.0
+	)
+
+	# 日志面板（顶部居中）
+	log_panel.position = Vector2(w * 0.5 - 330.0, 14.0)
+	log_panel.size = Vector2(660.0, 132.0)
+
+	# 手牌区：从草坪线下方开始，把底栏让出来
+	hand_area.position = Vector2(0.0, grass_y + 6.0)
+	hand_area.size = Vector2(w, maxf(120.0, h - grass_y - 6.0))
+	bottom_bar.position = Vector2(24.0, h - 56.0)
+	bottom_bar.size = Vector2(w - 48.0, 46.0)
+
+	result_label.size = Vector2(w, 60.0)
+	result_label.position = Vector2(0.0, h * 0.38)
+
+	_layout_hand()
+
+
+func _layout_hand() -> void:
+	if hand_area == null:
+		return
+	var n := _card_nodes.size()
+	if n == 0:
+		return
+	var w := hand_area.size.x
+	if w < 100.0:
+		w = 1280.0
+	var h := hand_area.size.y
+	if h < 100.0:
+		h = HAND_AREA_HEIGHT
+	var spacing := minf(116.0, (w - CARD_SIZE.x) / maxf(1.0, float(n)))
+	var total := spacing * float(n - 1)
+	var start_x := (w - total - CARD_SIZE.x) * 0.5
+	for i in n:
+		var node := _card_nodes[i]
+		if not is_instance_valid(node):
+			continue
+		var t := 0.0 if n == 1 else (float(i) / float(n - 1)) * 2.0 - 1.0
+		var angle := t * FAN_SPREAD_DEG
+		var x := start_x + spacing * float(i)
+		var y := h - CARD_SIZE.y - 46.0 + absf(t) * 14.0
+		node.position = Vector2(x, y)
+		node.rotation_degrees = angle
+		_card_base[node] = {"pos": node.position, "rot": angle}
+
+
+# ---------------------------------------------------------------- 数据 → UI
+
+func _start_battle() -> void:
+	_busy = false
+	log_box.clear()
+	result_label.visible = false
+	restart_button.visible = false
+	card_tip.visible = false
+	_set_enemy_pose(false)
+	state.start_battle()
+	_refresh()
+
+
+func _refresh() -> void:
+	player_head.text = "鲸娘\n生命 %d / %d　格挡 %d\n%s" % [
+		state.player_hp, state.PLAYER_MAX_HP, state.player_block, state.player_status_text()
+	]
+	var it := state.intent()
+	var intent_value := int(it.get("value", 0))
+	var intent_text := "意图：%s（格挡 +%d）" % [str(it.get("name", "")), intent_value]
+	if str(it.get("type", "")) == "attack":
+		intent_text = "意图：%s（%d 伤害）" % [str(it.get("name", "")), intent_value]
+	enemy_head.text = "奶龙\n生命 %d / %d　格挡 %d\n%s\n%s" % [
+		state.enemy_hp, state.ENEMY_MAX_HP, state.enemy_block,
+		state.enemy_status_text(), intent_text
+	]
+	energy_label.text = "大米饭 %d / %d" % [state.energy, state.MAX_ENERGY]
+	turn_label.text = "第 %d 回合 · 抽牌堆 %d · 弃牌堆 %d" % [
+		state.turn, state.draw_pile.size(), state.discard_pile.size()
+	]
+	end_turn_button.disabled = state.finished or _busy
+
+	for node in _card_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_card_nodes.clear()
+	_card_base.clear()
+	card_tip.visible = false
+
+	for i in state.hand.size():
+		var node := _make_card(i)
+		hand_area.add_child(node)
+		_card_nodes.append(node)
+	_layout_hand.call_deferred()
+
+
+func _make_card(index: int) -> Button:
+	var id: String = state.hand[index]
+	var node := _build_card_visual(id)
+	if not state.can_play(index):
+		node.modulate = Color(0.55, 0.55, 0.62, 1.0)
+	node.mouse_entered.connect(_on_card_hover.bind(index, node))
+	node.mouse_exited.connect(_on_card_unhover.bind(index, node))
+	node.pressed.connect(_on_card_pressed.bind(index))
+	return node
+
+
+## 纯视觉卡牌（无信号），出牌飞行动画复用它
+func _build_card_visual(id: String) -> Button:
+	var card := CardDB.get_card(id)
+	var node := Button.new()
+	node.flat = true
+	node.size = CARD_SIZE
+	node.custom_minimum_size = CARD_SIZE
+	node.pivot_offset = Vector2(CARD_SIZE.x * 0.5, CARD_SIZE.y)
+	node.focus_mode = Control.FOCUS_NONE
+	node.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var art := TextureRect.new()
+	art.texture = load(CARD_ART)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.size = CARD_SIZE
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(art)
+
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.03, 0.08, 0.55)
+	shade.position = Vector2(7, 7)
+	shade.size = CARD_SIZE - Vector2(14, 14)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(shade)
+
+	var cost := int(card.get("cost", 0))
+	var cost_label := Label.new()
+	cost_label.text = str(cost)
+	cost_label.add_theme_font_size_override("font_size", 24)
+	cost_label.add_theme_color_override("font_color", Color("#ffd479"))
+	cost_label.position = Vector2(10, 4)
+	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(cost_label)
+
+	var name_label := Label.new()
+	name_label.text = str(card.get("name", id))
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.add_theme_color_override("font_color", Color("#ffe9b0"))
+	name_label.position = Vector2(0, 40)
+	name_label.size = Vector2(CARD_SIZE.x, 22)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(name_label)
+
+	var desc_label := Label.new()
+	desc_label.text = str(card.get("desc", ""))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc_label.add_theme_font_size_override("font_size", 12)
+	desc_label.add_theme_color_override("font_color", Color("#e8eef7"))
+	desc_label.position = Vector2(9, 108)
+	desc_label.size = Vector2(CARD_SIZE.x - 18, 76)
+	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(desc_label)
+	return node
+
+
+# ---------------------------------------------------------------- 手牌交互
+
+func _on_card_hover(index: int, node: Button) -> void:
+	if _busy or not is_instance_valid(node):
+		return
+	var base: Dictionary = _card_base.get(node, {})
+	if base.is_empty():
+		return
+	node.z_index = 100
+	# 平滑凸起：位移 + 放大 + 旋转回正，TRANS_CUBIC/EASE_OUT 减少生硬感
+	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", Vector2(base["pos"].x, base["pos"].y - HOVER_LIFT), HOVER_TIME)
+	t.tween_property(node, "scale", Vector2(HOVER_SCALE, HOVER_SCALE), HOVER_TIME)
+	t.tween_property(node, "rotation_degrees", 0.0, HOVER_TIME)
+	_show_card_tip(index, node)
+
+
+func _on_card_unhover(_index: int, node: Button) -> void:
+	if not is_instance_valid(node):
+		return
+	var base: Dictionary = _card_base.get(node, {})
+	if base.is_empty():
+		return
+	node.z_index = 0
+	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", base["pos"], HOVER_TIME)
+	t.tween_property(node, "scale", Vector2.ONE, HOVER_TIME)
+	t.tween_property(node, "rotation_degrees", float(base["rot"]), HOVER_TIME)
+	card_tip.visible = false
+
+
+func _show_card_tip(index: int, node: Button) -> void:
+	if index < 0 or index >= state.hand.size():
+		return
+	var card := CardDB.get_card(state.hand[index])
+	if card.is_empty():
+		return
+	card_tip_label.text = "[b][color=#ffe9b0]%s[/color][/b]　[color=#ffd479]%d 费[/color]\n%s" % [
+		str(card.get("name", "")), int(card.get("cost", 0)), str(card.get("desc", ""))
+	]
+	# 先让文本完成排版，再按实际内容高度固定面板尺寸，避免文字被裁
+	card_tip_label.custom_minimum_size = Vector2(380, 0)
+	card_tip.size = Vector2(404, 0)
+	card_tip_label.size = Vector2(380, 0)
+	var content_h := maxf(card_tip_label.get_content_height(), 48.0)
+	card_tip_label.custom_minimum_size = Vector2(380, content_h)
+	card_tip_label.size = Vector2(380, content_h)
+	card_tip.size = Vector2(404, content_h + 24.0)
+	card_tip.visible = true
+
+	var rect := node.get_global_rect()
+	var center := Vector2(rect.position.x + rect.size.x * 0.5, rect.position.y - 10.0)
+	var local := get_global_transform().affine_inverse() * center
+	var max_x := maxf(12.0, size.x - card_tip.size.x - 12.0)
+	var x := clampf(local.x - card_tip.size.x * 0.5, 12.0, max_x)
+	var y := clampf(local.y - card_tip.size.y, 10.0, size.y - card_tip.size.y - 10.0)
+	card_tip.position = Vector2(x, y)
+
+
+# ---------------------------------------------------------------- 交互
+
+func _on_card_pressed(index: int) -> void:
+	if _busy:
+		return
+	if index < 0 or index >= state.hand.size():
+		return
+	if not state.can_play(index):
+		return
+	_busy = true
+	card_tip.visible = false
+	_layout_hand()
+
+	var id: String = state.hand[index]
+	var start_rect := Rect2(Vector2.ZERO, CARD_SIZE)
+	var node: Button = null
+	if index < _card_nodes.size():
+		node = _card_nodes[index]
+	if node != null and is_instance_valid(node):
+		start_rect = node.get_global_rect()
+		node.visible = false
+
+	# 先飞到屏幕中央烧掉，再结算效果
+	await _play_card_burn(id, start_rect)
+	_sfx("deepdepp")
+	state.play_card(index)
+	_busy = false
+	_refresh()
+
+
+## 出牌动画：卡片飞到屏幕中央 → 焚烧（放大 + 变橙红 + 淡出）
+func _play_card_burn(id: String, start_rect: Rect2) -> void:
+	var visual := _build_card_visual(id)
+	visual.size = CARD_SIZE
+	visual.pivot_offset = CARD_SIZE * 0.5
+	visual.z_index = 950
+	visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(visual)
+
+	var start_local := get_global_transform().affine_inverse() * start_rect.position
+	visual.position = start_local
+	visual.scale = Vector2.ONE
+
+	var target_pos := Vector2(size.x * 0.5 - CARD_SIZE.x * 0.5, size.y * 0.36 - CARD_SIZE.y * 0.5)
+	var fly := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	fly.tween_property(visual, "position", target_pos, 0.26)
+	fly.tween_property(visual, "scale", Vector2(1.45, 1.45), 0.26)
+	fly.tween_property(visual, "rotation_degrees", 0.0, 0.26)
+	await fly.finished
+
+	var burn := create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	burn.tween_property(visual, "modulate", Color(2.4, 0.55, 0.15, 0.0), 0.4)
+	burn.tween_property(visual, "scale", Vector2(1.75, 1.75), 0.4)
+	burn.tween_property(visual, "position", target_pos + Vector2(0, -34), 0.4)
+	await burn.finished
+
+	if is_instance_valid(visual):
+		visual.queue_free()
+
+
+func _on_end_turn() -> void:
+	if state.finished or _busy:
+		return
+	_busy = true
+	_refresh()
+
+	_set_enemy_pose(true)
+	await get_tree().create_timer(0.45).timeout
+
+	_sfx("deepdepp")
+	state.enemy_turn()
+
+	await get_tree().create_timer(0.85).timeout
+	_set_enemy_pose(false)
+	await get_tree().create_timer(0.2).timeout
+
+	if not state.finished:
+		state.begin_player_turn()
+	_busy = false
+	_refresh()
+
+
+func _set_enemy_pose(action: bool) -> void:
+	if enemy_pic == null:
+		return
+	enemy_pic.texture = load(ENEMY_ACTION_TEXTURE if action else ENEMY_IDLE_TEXTURE)
+	var target_scale := Vector2(1.06, 1.06) if action else Vector2.ONE
+	var target_pos := _enemy_rest_pos + (Vector2(-8, -6) if action else Vector2.ZERO)
+	var laid_out := _enemy_rest_pos != Vector2.ZERO
+	if _pose_tween != null and _pose_tween.is_valid():
+		_pose_tween.kill()
+	_pose_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_pose_tween.tween_property(enemy_pic, "scale", target_scale, POSE_TIME)
+	if laid_out:
+		_pose_tween.tween_property(enemy_pic, "position", target_pos, POSE_TIME)
+
+
+func _on_restart() -> void:
+	_start_battle()
+
+
+func _on_log(text: String) -> void:
+	log_box.append_text(text + "\n")
+
+
+func _on_battle_over(won: bool) -> void:
+	_sfx("victory" if won else "defeat")
+	result_label.visible = true
+	restart_button.visible = true
+	if won:
+		result_label.text = "胜利！奶龙被你打倒了"
+		result_label.add_theme_color_override("font_color", Color("#9dffa0"))
+	else:
+		result_label.text = "败北……按「重新开始」再来一次"
+		result_label.add_theme_color_override("font_color", Color("#ff9d9d"))
+
+
+func _sfx(sound: String) -> void:
+	var player := get_node_or_null("/root/Sfx")
+	if player != null and player.has_method("play"):
+		player.play(sound)
+
+
+# ---------------------------------------------------------------- 受击特效
+
+func _on_damaged(target: String, amount: int) -> void:
+	_sfx("seekseek")
+	var pic: TextureRect = enemy_pic if target == "enemy" else player_pic
+	_flash(pic)
+	_spawn_damage_number(pic, amount)
+
+
+## 受伤变红：整体闪红再缓动恢复
+func _flash(pic: TextureRect) -> void:
+	if pic == null:
+		return
+	pic.modulate = Color(2.4, 0.35, 0.35, 1.0)
+	var t := create_tween()
+	t.tween_property(pic, "modulate", Color(1, 1, 1, 1), 0.24) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+## 掉血数字：从角色胸口上浮并淡出
+func _spawn_damage_number(pic: TextureRect, amount: int) -> void:
+	if fx_layer == null or pic == null or amount <= 0:
+		return
+	var label := Label.new()
+	label.text = "-%d" % amount
+	label.add_theme_font_size_override("font_size", 40)
+	label.add_theme_color_override("font_color", Color("#ff5b5b"))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 8)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.size = Vector2(140, 54)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fx_layer.add_child(label)
+
+	var center := pic.get_global_rect().get_center()
+	var local := fx_layer.get_global_transform().affine_inverse() * center
+	label.position = local - Vector2(70, 16)
+
+	var rise := create_tween().set_parallel(true)
+	rise.tween_property(label, "position:y", label.position.y - 84, 0.8) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	rise.tween_property(label, "modulate:a", 0.0, 0.8).set_delay(0.2)
+	var cleanup := create_tween()
+	cleanup.tween_interval(0.9)
+	cleanup.tween_callback(label.queue_free)
+
+
+# ---------------------------------------------------------------- 全屏
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if event.keycode == KEY_F11:
+		_toggle_fullscreen()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ESCAPE and _is_fullscreen():
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		get_viewport().set_input_as_handled()
+
+
+func _toggle_fullscreen() -> void:
+	if _is_fullscreen():
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+
+func _is_fullscreen() -> bool:
+	var mode := DisplayServer.window_get_mode()
+	return (
+		mode == DisplayServer.WINDOW_MODE_FULLSCREEN
+		or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	)

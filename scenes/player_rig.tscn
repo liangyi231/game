@@ -1,0 +1,280 @@
+[gd_scene load_steps=6 format=3]
+
+[sub_resource type="Animation" id="Anim_idle"]
+resource_name = "idle"
+length = 2.0
+loop_mode = 1
+tracks/0/type = &"value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Hip:position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 1, 2),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Vector2(0, 0), Vector2(0, 2), Vector2(0, 0)]
+}
+tracks/1/type = &"value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Ahoge:rotation")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 1, 2),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 0.12, 0.0]
+}
+tracks/2/type = &"value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Tail1:rotation")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 1, 2),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 0.15, 0.0]
+}
+tracks/3/type = &"value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("HairBack:scale")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 1, 2),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Vector2(1, 1), Vector2(1.02, 1.01), Vector2(1, 1)]
+}
+[sub_resource type="Animation" id="Anim_move"]
+resource_name = "move"
+length = 0.6
+loop_mode = 1
+tracks/0/type = &"value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Hip:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.3, 0.6),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 0.1, 0.0]
+}
+tracks/1/type = &"value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Tail1:rotation")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.3, 0.6),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, -0.25, 0.0]
+}
+[sub_resource type="Animation" id="Anim_hurt"]
+resource_name = "hurt"
+length = 0.25
+loop_mode = 0
+tracks/0/type = &"value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Player:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.06, 0.14, 0.25),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 1), Color(1.8, 1.8, 1.8, 1), Color(1.2, 1.2, 1.2, 1), Color(1, 1, 1, 1)]
+}
+tracks/1/type = &"value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Hip:position")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.06, 0.12, 0.18, 0.25),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(0, 0), Vector2(5, 0), Vector2(-5, 0), Vector2(3, 0), Vector2(0, 0)]
+}
+[sub_resource type="AnimationLibrary" id="AnimLib"]
+_data = {
+"idle": SubResource("Anim_idle"), "move": SubResource("Anim_move"), "hurt": SubResource("Anim_hurt")
+}
+
+[node name="Player" type="Node2D"]
+
+[node name="Hip" type="Node2D" parent="Player"]
+position = Vector2(0, 0)
+
+[node name="TailRoot" type="Node2D" parent="Hip"]
+position = Vector2(34, -88)
+
+[node name="Tail1" type="Polygon2D" parent="TailRoot"]
+position = Vector2(0, 0)
+color = Color(0.361, 0.498, 0.753, 1.0)
+polygon = PackedVector2Array(74.0, 6.0, 73.0, 9.1, 70.0, 12.1, 65.3, 14.7, 58.9, 16.9, 51.4, 18.6, 42.9, 19.6, 34.0, 20.0, 25.1, 19.6, 16.6, 18.6, 9.1, 16.9, 2.7, 14.7, -2.0, 12.1, -5.0, 9.1, -6.0, 6.0, -5.0, 2.9, -2.0, -0.1, 2.7, -2.7, 9.1, -4.9, 16.6, -6.6, 25.1, -7.6, 34.0, -8.0, 42.9, -7.6, 51.4, -6.6, 58.9, -4.9, 65.3, -2.7, 70.0, -0.1, 73.0, 2.9, 74.0, 6.0)
+
+[node name="TailTip" type="Polygon2D" parent="Tail1"]
+position = Vector2(40, 0)
+color = Color(0.255, 0.384, 0.624, 1.0)
+polygon = PackedVector2Array(0.0, 0.0, 44.0, -18.0, 52.0, 6.0)
+
+[node name="LegL" type="Polygon2D" parent="Hip"]
+position = Vector2(-20, 0)
+color = Color(0.984, 0.863, 0.784, 1.0)
+polygon = PackedVector2Array(11.0, -10.0, 10.7, -7.3, 9.9, -4.8, 8.6, -2.5, 6.9, -0.6, 4.8, 0.8, 2.4, 1.7, 0.0, 2.0, -2.4, 1.7, -4.8, 0.8, -6.9, -0.6, -8.6, -2.5, -9.9, -4.8, -10.7, -7.3, -11.0, -10.0, -10.7, -12.7, -9.9, -15.2, -8.6, -17.5, -6.9, -19.4, -4.8, -20.8, -2.4, -21.7, -0.0, -22.0, 2.4, -21.7, 4.8, -20.8, 6.9, -19.4, 8.6, -17.5, 9.9, -15.2, 10.7, -12.7, 11.0, -10.0)
+
+[node name="ShoeL" type="Polygon2D" parent="LegL"]
+position = Vector2(0, 0)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(14.0, -3.0, 13.6, -1.4, 12.6, 0.0, 10.9, 1.4, 8.7, 2.5, 6.1, 3.3, 3.1, 3.8, 0.0, 4.0, -3.1, 3.8, -6.1, 3.3, -8.7, 2.5, -10.9, 1.4, -12.6, 0.0, -13.6, -1.4, -14.0, -3.0, -13.6, -4.6, -12.6, -6.0, -10.9, -7.4, -8.7, -8.5, -6.1, -9.3, -3.1, -9.8, -0.0, -10.0, 3.1, -9.8, 6.1, -9.3, 8.7, -8.5, 10.9, -7.4, 12.6, -6.0, 13.6, -4.6, 14.0, -3.0)
+
+[node name="LegR" type="Polygon2D" parent="Hip"]
+position = Vector2(20, 0)
+color = Color(0.984, 0.863, 0.784, 1.0)
+polygon = PackedVector2Array(11.0, -10.0, 10.7, -7.3, 9.9, -4.8, 8.6, -2.5, 6.9, -0.6, 4.8, 0.8, 2.4, 1.7, 0.0, 2.0, -2.4, 1.7, -4.8, 0.8, -6.9, -0.6, -8.6, -2.5, -9.9, -4.8, -10.7, -7.3, -11.0, -10.0, -10.7, -12.7, -9.9, -15.2, -8.6, -17.5, -6.9, -19.4, -4.8, -20.8, -2.4, -21.7, -0.0, -22.0, 2.4, -21.7, 4.8, -20.8, 6.9, -19.4, 8.6, -17.5, 9.9, -15.2, 10.7, -12.7, 11.0, -10.0)
+
+[node name="ShoeR" type="Polygon2D" parent="LegR"]
+position = Vector2(0, 0)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(14.0, -3.0, 13.6, -1.4, 12.6, 0.0, 10.9, 1.4, 8.7, 2.5, 6.1, 3.3, 3.1, 3.8, 0.0, 4.0, -3.1, 3.8, -6.1, 3.3, -8.7, 2.5, -10.9, 1.4, -12.6, 0.0, -13.6, -1.4, -14.0, -3.0, -13.6, -4.6, -12.6, -6.0, -10.9, -7.4, -8.7, -8.5, -6.1, -9.3, -3.1, -9.8, -0.0, -10.0, 3.1, -9.8, 6.1, -9.3, 8.7, -8.5, 10.9, -7.4, 12.6, -6.0, 13.6, -4.6, 14.0, -3.0)
+
+[node name="Skirt" type="Polygon2D" parent="Hip"]
+position = Vector2(0, -18)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(-58.0, 0.0, 58.0, 0.0, 46.0, -74.0, -46.0, -74.0)
+
+[node name="Apron" type="Polygon2D" parent="Hip"]
+position = Vector2(0, -22)
+color = Color(0.969, 0.961, 0.941, 1.0)
+polygon = PackedVector2Array(-26.0, 0.0, 26.0, 0.0, 20.0, -66.0, -20.0, -66.0)
+
+[node name="Spine" type="Node2D" parent="Hip"]
+position = Vector2(0, -92)
+
+[node name="Torso" type="Polygon2D" parent="Spine"]
+position = Vector2(0, 0)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(-30.0, 0.0, 30.0, 0.0, 26.0, -48.0, -26.0, -48.0)
+
+[node name="Collar" type="Polygon2D" parent="Spine"]
+position = Vector2(0, -46)
+color = Color(1.000, 1.000, 1.000, 1.0)
+polygon = PackedVector2Array(26.0, 0.0, 25.3, 2.0, 23.4, 3.9, 20.3, 5.6, 16.2, 7.0, 11.3, 8.1, 5.8, 8.8, 0.0, 9.0, -5.8, 8.8, -11.3, 8.1, -16.2, 7.0, -20.3, 5.6, -23.4, 3.9, -25.3, 2.0, -26.0, 0.0, -25.3, -2.0, -23.4, -3.9, -20.3, -5.6, -16.2, -7.0, -11.3, -8.1, -5.8, -8.8, -0.0, -9.0, 5.8, -8.8, 11.3, -8.1, 16.2, -7.0, 20.3, -5.6, 23.4, -3.9, 25.3, -2.0, 26.0, -0.0)
+
+[node name="ArmL" type="Polygon2D" parent="Spine"]
+position = Vector2(-36, -36)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(11.0, 14.0, 10.7, 19.3, 9.9, 24.4, 8.6, 29.0, 6.9, 32.8, 4.8, 35.6, 2.4, 37.4, 0.0, 38.0, -2.4, 37.4, -4.8, 35.6, -6.9, 32.8, -8.6, 29.0, -9.9, 24.4, -10.7, 19.3, -11.0, 14.0, -10.7, 8.7, -9.9, 3.6, -8.6, -1.0, -6.9, -4.8, -4.8, -7.6, -2.4, -9.4, -0.0, -10.0, 2.4, -9.4, 4.8, -7.6, 6.9, -4.8, 8.6, -1.0, 9.9, 3.6, 10.7, 8.7, 11.0, 14.0)
+
+[node name="HandL" type="Polygon2D" parent="ArmL"]
+position = Vector2(0, 34)
+color = Color(0.984, 0.863, 0.784, 1.0)
+polygon = PackedVector2Array(11.0, 0.0, 10.7, 2.4, 9.9, 4.8, 8.6, 6.9, 6.9, 8.6, 4.8, 9.9, 2.4, 10.7, 0.0, 11.0, -2.4, 10.7, -4.8, 9.9, -6.9, 8.6, -8.6, 6.9, -9.9, 4.8, -10.7, 2.4, -11.0, 0.0, -10.7, -2.4, -9.9, -4.8, -8.6, -6.9, -6.9, -8.6, -4.8, -9.9, -2.4, -10.7, -0.0, -11.0, 2.4, -10.7, 4.8, -9.9, 6.9, -8.6, 8.6, -6.9, 9.9, -4.8, 10.7, -2.4, 11.0, -0.0)
+
+[node name="ArmR" type="Polygon2D" parent="Spine"]
+position = Vector2(36, -36)
+color = Color(0.118, 0.165, 0.290, 1.0)
+polygon = PackedVector2Array(11.0, 14.0, 10.7, 19.3, 9.9, 24.4, 8.6, 29.0, 6.9, 32.8, 4.8, 35.6, 2.4, 37.4, 0.0, 38.0, -2.4, 37.4, -4.8, 35.6, -6.9, 32.8, -8.6, 29.0, -9.9, 24.4, -10.7, 19.3, -11.0, 14.0, -10.7, 8.7, -9.9, 3.6, -8.6, -1.0, -6.9, -4.8, -4.8, -7.6, -2.4, -9.4, -0.0, -10.0, 2.4, -9.4, 4.8, -7.6, 6.9, -4.8, 8.6, -1.0, 9.9, 3.6, 10.7, 8.7, 11.0, 14.0)
+
+[node name="HandR" type="Polygon2D" parent="ArmR"]
+position = Vector2(0, 34)
+color = Color(0.984, 0.863, 0.784, 1.0)
+polygon = PackedVector2Array(11.0, 0.0, 10.7, 2.4, 9.9, 4.8, 8.6, 6.9, 6.9, 8.6, 4.8, 9.9, 2.4, 10.7, 0.0, 11.0, -2.4, 10.7, -4.8, 9.9, -6.9, 8.6, -8.6, 6.9, -9.9, 4.8, -10.7, 2.4, -11.0, 0.0, -10.7, -2.4, -9.9, -4.8, -8.6, -6.9, -6.9, -8.6, -4.8, -9.9, -2.4, -10.7, -0.0, -11.0, 2.4, -10.7, 4.8, -9.9, 6.9, -8.6, 8.6, -6.9, 9.9, -4.8, 10.7, -2.4, 11.0, -0.0)
+
+[node name="Chest" type="Node2D" parent="Spine"]
+position = Vector2(0, -46)
+
+[node name="HairBack" type="Polygon2D" parent="Chest"]
+position = Vector2(0, -44)
+color = Color(0.200, 0.286, 0.498, 1.0)
+polygon = PackedVector2Array(86.0, 0.0, 83.8, 18.2, 77.5, 35.6, 67.2, 51.1, 53.6, 64.1, 37.3, 73.9, 19.1, 79.9, 0.0, 82.0, -19.1, 79.9, -37.3, 73.9, -53.6, 64.1, -67.2, 51.1, -77.5, 35.6, -83.8, 18.2, -86.0, 0.0, -83.8, -18.2, -77.5, -35.6, -67.2, -51.1, -53.6, -64.1, -37.3, -73.9, -19.1, -79.9, -0.0, -82.0, 19.1, -79.9, 37.3, -73.9, 53.6, -64.1, 67.2, -51.1, 77.5, -35.6, 83.8, -18.2, 86.0, -0.0)
+
+[node name="Head" type="Node2D" parent="Chest"]
+position = Vector2(0, -48)
+
+[node name="HeadBase" type="Polygon2D" parent="Head"]
+position = Vector2(0, 0)
+color = Color(0.984, 0.863, 0.784, 1.0)
+polygon = PackedVector2Array(70.0, 0.0, 68.2, 15.1, 63.1, 29.5, 54.7, 42.4, 43.6, 53.2, 30.4, 61.3, 15.6, 66.3, 0.0, 68.0, -15.6, 66.3, -30.4, 61.3, -43.6, 53.2, -54.7, 42.4, -63.1, 29.5, -68.2, 15.1, -70.0, 0.0, -68.2, -15.1, -63.1, -29.5, -54.7, -42.4, -43.6, -53.2, -30.4, -61.3, -15.6, -66.3, -0.0, -68.0, 15.6, -66.3, 30.4, -61.3, 43.6, -53.2, 54.7, -42.4, 63.1, -29.5, 68.2, -15.1, 70.0, -0.0)
+
+[node name="FinL" type="Polygon2D" parent="Head"]
+position = Vector2(-66, -4)
+color = Color(0.525, 0.682, 0.878, 1.0)
+polygon = PackedVector2Array(-6.0, 0.0, 18.0, -20.0, 20.0, 16.0)
+
+[node name="FinR" type="Polygon2D" parent="Head"]
+position = Vector2(66, -4)
+color = Color(0.525, 0.682, 0.878, 1.0)
+polygon = PackedVector2Array(6.0, 0.0, -18.0, -20.0, -20.0, 16.0)
+
+[node name="Face" type="Node2D" parent="Head"]
+position = Vector2(0, 0)
+
+[node name="EyeL" type="Polygon2D" parent="Face"]
+position = Vector2(-26, 4)
+color = Color(0.169, 0.227, 0.361, 1.0)
+polygon = PackedVector2Array(9.0, 0.0, 8.8, 2.7, 8.1, 5.2, 7.0, 7.5, 5.6, 9.4, 3.9, 10.8, 2.0, 11.7, 0.0, 12.0, -2.0, 11.7, -3.9, 10.8, -5.6, 9.4, -7.0, 7.5, -8.1, 5.2, -8.8, 2.7, -9.0, 0.0, -8.8, -2.7, -8.1, -5.2, -7.0, -7.5, -5.6, -9.4, -3.9, -10.8, -2.0, -11.7, -0.0, -12.0, 2.0, -11.7, 3.9, -10.8, 5.6, -9.4, 7.0, -7.5, 8.1, -5.2, 8.8, -2.7, 9.0, -0.0)
+
+[node name="GlintL" type="Polygon2D" parent="EyeL"]
+position = Vector2(0, 0)
+color = Color(1.000, 1.000, 1.000, 1.0)
+polygon = PackedVector2Array(0.5, -4.0, 0.4, -3.0, 0.2, -2.0, -0.3, -1.2, -0.8, -0.5, -1.5, 0.1, -2.2, 0.4, -3.0, 0.5, -3.8, 0.4, -4.5, 0.1, -5.2, -0.5, -5.7, -1.2, -6.2, -2.0, -6.4, -3.0, -6.5, -4.0, -6.4, -5.0, -6.2, -6.0, -5.7, -6.8, -5.2, -7.5, -4.5, -8.1, -3.8, -8.4, -3.0, -8.5, -2.2, -8.4, -1.5, -8.1, -0.8, -7.5, -0.3, -6.8, 0.2, -6.0, 0.4, -5.0, 0.5, -4.0)
+
+[node name="EyeR" type="Polygon2D" parent="Face"]
+position = Vector2(26, 4)
+color = Color(0.169, 0.227, 0.361, 1.0)
+polygon = PackedVector2Array(9.0, 0.0, 8.8, 2.7, 8.1, 5.2, 7.0, 7.5, 5.6, 9.4, 3.9, 10.8, 2.0, 11.7, 0.0, 12.0, -2.0, 11.7, -3.9, 10.8, -5.6, 9.4, -7.0, 7.5, -8.1, 5.2, -8.8, 2.7, -9.0, 0.0, -8.8, -2.7, -8.1, -5.2, -7.0, -7.5, -5.6, -9.4, -3.9, -10.8, -2.0, -11.7, -0.0, -12.0, 2.0, -11.7, 3.9, -10.8, 5.6, -9.4, 7.0, -7.5, 8.1, -5.2, 8.8, -2.7, 9.0, -0.0)
+
+[node name="GlintR" type="Polygon2D" parent="EyeR"]
+position = Vector2(0, 0)
+color = Color(1.000, 1.000, 1.000, 1.0)
+polygon = PackedVector2Array(6.5, -4.0, 6.4, -3.0, 6.2, -2.0, 5.7, -1.2, 5.2, -0.5, 4.5, 0.1, 3.8, 0.4, 3.0, 0.5, 2.2, 0.4, 1.5, 0.1, 0.8, -0.5, 0.3, -1.2, -0.2, -2.0, -0.4, -3.0, -0.5, -4.0, -0.4, -5.0, -0.2, -6.0, 0.3, -6.8, 0.8, -7.5, 1.5, -8.1, 2.2, -8.4, 3.0, -8.5, 3.8, -8.4, 4.5, -8.1, 5.2, -7.5, 5.7, -6.8, 6.2, -6.0, 6.4, -5.0, 6.5, -4.0)
+
+[node name="BlushL" type="Polygon2D" parent="Face"]
+position = Vector2(-44, 20)
+color = Color(0.949, 0.569, 0.612, 1.0)
+polygon = PackedVector2Array(12.0, 0.0, 11.7, 1.6, 10.8, 3.0, 9.4, 4.4, 7.5, 5.5, 5.2, 6.3, 2.7, 6.8, 0.0, 7.0, -2.7, 6.8, -5.2, 6.3, -7.5, 5.5, -9.4, 4.4, -10.8, 3.0, -11.7, 1.6, -12.0, 0.0, -11.7, -1.6, -10.8, -3.0, -9.4, -4.4, -7.5, -5.5, -5.2, -6.3, -2.7, -6.8, -0.0, -7.0, 2.7, -6.8, 5.2, -6.3, 7.5, -5.5, 9.4, -4.4, 10.8, -3.0, 11.7, -1.6, 12.0, -0.0)
+
+[node name="BlushR" type="Polygon2D" parent="Face"]
+position = Vector2(44, 20)
+color = Color(0.949, 0.569, 0.612, 1.0)
+polygon = PackedVector2Array(12.0, 0.0, 11.7, 1.6, 10.8, 3.0, 9.4, 4.4, 7.5, 5.5, 5.2, 6.3, 2.7, 6.8, 0.0, 7.0, -2.7, 6.8, -5.2, 6.3, -7.5, 5.5, -9.4, 4.4, -10.8, 3.0, -11.7, 1.6, -12.0, 0.0, -11.7, -1.6, -10.8, -3.0, -9.4, -4.4, -7.5, -5.5, -5.2, -6.3, -2.7, -6.8, -0.0, -7.0, 2.7, -6.8, 5.2, -6.3, 7.5, -5.5, 9.4, -4.4, 10.8, -3.0, 11.7, -1.6, 12.0, -0.0)
+
+[node name="Mouth" type="Polygon2D" parent="Face"]
+position = Vector2(0, 26)
+color = Color(0.769, 0.314, 0.373, 1.0)
+polygon = PackedVector2Array(5.0, 0.0, 4.9, 0.8, 4.5, 1.5, 3.9, 2.2, 3.1, 2.7, 2.2, 3.2, 1.1, 3.4, 0.0, 3.5, -1.1, 3.4, -2.2, 3.2, -3.1, 2.7, -3.9, 2.2, -4.5, 1.5, -4.9, 0.8, -5.0, 0.0, -4.9, -0.8, -4.5, -1.5, -3.9, -2.2, -3.1, -2.7, -2.2, -3.2, -1.1, -3.4, -0.0, -3.5, 1.1, -3.4, 2.2, -3.2, 3.1, -2.7, 3.9, -2.2, 4.5, -1.5, 4.9, -0.8, 5.0, -0.0)
+
+[node name="HairFront" type="Polygon2D" parent="Head"]
+position = Vector2(0, 0)
+color = Color(0.290, 0.447, 0.769, 1.0)
+polygon = PackedVector2Array(-74.0, 0.0, -73.4, -9.1, -71.5, -18.1, -68.4, -26.8, -64.1, -35.0, -58.7, -42.6, -52.3, -49.5, -45.0, -55.5, -37.0, -60.6, -28.3, -64.7, -19.2, -67.6, -9.7, -69.4, -0.0, -70.0, 9.7, -69.4, 19.2, -67.6, 28.3, -64.7, 37.0, -60.6, 45.0, -55.5, 52.3, -49.5, 58.7, -42.6, 64.1, -35.0, 68.4, -26.8, 71.5, -18.1, 73.4, -9.1, 74.0, -0.0, 56.0, 6.0, 55.5, 0.3, 54.1, -5.4, 51.7, -10.8, 48.5, -16.0, 44.4, -20.8, 39.6, -25.1, 34.1, -28.9, 28.0, -32.1, 21.4, -34.7, 14.5, -36.5, 7.3, -37.6, -0.0, -38.0, -7.3, -37.6, -14.5, -36.5, -21.4, -34.7, -28.0, -32.1, -34.1, -28.9, -39.6, -25.1, -44.4, -20.8, -48.5, -16.0, -51.7, -10.8, -54.1, -5.4, -55.5, 0.3, -56.0, 6.0)
+
+[node name="Headdress" type="Polygon2D" parent="Head"]
+position = Vector2(0, -56)
+color = Color(1.000, 1.000, 1.000, 1.0)
+polygon = PackedVector2Array(64.0, 0.0, 62.4, 3.3, 57.7, 6.5, 50.0, 9.4, 39.9, 11.7, 27.8, 13.5, 14.2, 14.6, 0.0, 15.0, -14.2, 14.6, -27.8, 13.5, -39.9, 11.7, -50.0, 9.4, -57.7, 6.5, -62.4, 3.3, -64.0, 0.0, -62.4, -3.3, -57.7, -6.5, -50.0, -9.4, -39.9, -11.7, -27.8, -13.5, -14.2, -14.6, -0.0, -15.0, 14.2, -14.6, 27.8, -13.5, 39.9, -11.7, 50.0, -9.4, 57.7, -6.5, 62.4, -3.3, 64.0, -0.0)
+
+[node name="Ahoge" type="Polygon2D" parent="Head"]
+position = Vector2(0, -64)
+color = Color(0.200, 0.286, 0.498, 1.0)
+polygon = PackedVector2Array(-4.0, 0.0, 2.0, -26.0, 10.0, -34.0, 6.0, -18.0, 3.0, 0.0)
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimLib")
+}
+autoplay = "idle"
