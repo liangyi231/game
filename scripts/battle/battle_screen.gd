@@ -33,6 +33,9 @@ const NEIGHBOR_PUSH := 30.0
 ## 入牌动画
 const ENTRY_TIME := 0.22
 const ENTRY_STAGGER := 0.045
+## 抽牌动画（从抽牌堆飞入手牌）
+const DRAW_FLY_TIME := 0.46
+const DRAW_STAGGER := 0.07
 
 var state: BattleState
 
@@ -60,6 +63,15 @@ var _card_base: Dictionary = {}
 var _card_tweens: Dictionary = {}
 ## 下次布局时是否播放入牌动画（刷新手牌后为 true）
 var _cards_entry := false
+## 抽牌堆视觉 + 上次手牌快照（用于识别“新抽到的牌”）
+var draw_pile: Control
+var draw_pile_label: Label
+var _last_hand: Array[String] = []
+var _pending_draw: Array[int] = []
+## 同一帧内 _refresh 会被信号 + 显式调用触发两次，这里去重，避免待抽列表被清空
+var _refresh_in_frame := false
+## 抽牌动画播放中，暂时屏蔽悬停，避免邻牌让位把飞行 tween 打断
+var _draw_animating := false
 var _enemy_rest_pos := Vector2.ZERO
 var _pose_tween: Tween
 var _busy := false
@@ -172,6 +184,44 @@ func _build_ui() -> void:
 	hand_area = Control.new()
 	hand_area.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(hand_area)
+
+	# --- 抽牌堆（左下角卡背 + 剩余张数，抽牌从这里飞进手牌） ---
+	draw_pile = Control.new()
+	draw_pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	draw_pile.z_index = 2
+	add_child(draw_pile)
+	var pile_art := TextureRect.new()
+	pile_art.texture = load(CARD_ART)
+	pile_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pile_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	var pile_size := Vector2(92.0, 120.0)
+	pile_art.size = pile_size
+	pile_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pile_mat := ShaderMaterial.new()
+	pile_mat.shader = load(CARD_SHADER)
+	pile_mat.set_shader_parameter("card_size", pile_size)
+	pile_mat.set_shader_parameter("radius", 10.0)
+	pile_art.material = pile_mat
+	draw_pile.add_child(pile_art)
+	var pile_shade := Panel.new()
+	var pile_sb := StyleBoxFlat.new()
+	pile_sb.bg_color = Color(0.02, 0.03, 0.08, 0.45)
+	pile_sb.set_corner_radius_all(8)
+	pile_shade.add_theme_stylebox_override("panel", pile_sb)
+	pile_shade.position = Vector2(5, 5)
+	pile_shade.size = pile_size - Vector2(10, 10)
+	pile_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	draw_pile.add_child(pile_shade)
+	draw_pile_label = Label.new()
+	draw_pile_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	draw_pile_label.add_theme_font_size_override("font_size", 20)
+	draw_pile_label.add_theme_color_override("font_color", Color("#ffe9b0"))
+	draw_pile_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	draw_pile_label.add_theme_constant_override("outline_size", 6)
+	draw_pile_label.position = Vector2(0, pile_size.y - 40.0)
+	draw_pile_label.size = Vector2(pile_size.x, 32.0)
+	draw_pile_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	draw_pile.add_child(draw_pile_label)
 
 	# --- 底部操作栏 ---
 	bottom_bar = HBoxContainer.new()
@@ -295,6 +345,8 @@ func _layout_stage() -> void:
 	# 手牌区：从草坪线下方开始，把底栏让出来
 	hand_area.position = Vector2(0.0, grass_y + 6.0)
 	hand_area.size = Vector2(w, maxf(120.0, h - grass_y - 6.0))
+	draw_pile.position = Vector2(18.0, h - 224.0)
+	draw_pile.size = Vector2(92.0, 120.0)
 	bottom_bar.position = Vector2(24.0, h - 56.0)
 	bottom_bar.size = Vector2(w - 48.0, 46.0)
 
@@ -320,9 +372,14 @@ func _layout_hand() -> void:
 		node.rotation_degrees = float(slot["rot"])
 		_card_base[node] = slot
 
-	# 入牌动画：错峰从下方轻浮上来 + 淡入（炉石那种一张张落位的感觉）
+	# 抽牌动画：这次新抽到的牌从抽牌堆飞入槽位，其余牌直接就位
 	if _cards_entry and n > 0:
 		_cards_entry = false
+		var draw_set := {}
+		for idx in _pending_draw:
+			draw_set[idx] = true
+		_pending_draw.clear()
+		var order := 0
 		for i in n:
 			var card_node := _card_nodes[i]
 			if not is_instance_valid(card_node):
@@ -330,15 +387,55 @@ func _layout_hand() -> void:
 			var base: Dictionary = _card_base.get(card_node, {})
 			if base.is_empty():
 				continue
-			var target: Vector2 = base["pos"]
-			card_node.position = target + Vector2(0.0, 28.0)
-			card_node.scale = Vector2(0.96, 0.96)
-			card_node.modulate.a = 0.0
-			var t := card_node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-			t.tween_property(card_node, "position", target, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
-			t.tween_property(card_node, "scale", Vector2.ONE, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
-			t.tween_property(card_node, "modulate:a", 1.0, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
+			if draw_set.has(i):
+				_animate_draw_in(card_node, base, order)
+				order += 1
+			else:
+				card_node.modulate.a = 1.0
+		if order > 0:
+			_draw_animating = true
+			var wait := DRAW_FLY_TIME + float(order - 1) * DRAW_STAGGER + 0.06
+			get_tree().create_timer(wait).timeout.connect(func(): _draw_animating = false)
 	_update_hand_hover.call_deferred()
+
+
+## 对比上次手牌，找出这次新抽到的牌的索引（多重集合差集）
+func _compute_draw_indices() -> Array[int]:
+	var old_counts := {}
+	for id in _last_hand:
+		old_counts[id] = int(old_counts.get(id, 0)) + 1
+	var result: Array[int] = []
+	for i in state.hand.size():
+		var id := state.hand[i]
+		if int(old_counts.get(id, 0)) > 0:
+			old_counts[id] = int(old_counts[id]) - 1
+		else:
+			result.append(i)
+	return result
+
+
+## 单张牌抽牌动画：抽牌堆小卡背 → 弧线放大落位（BACK 过冲）
+func _animate_draw_in(node: Button, slot: Dictionary, order: int) -> void:
+	var target: Vector2 = slot["pos"]
+	var target_rot := float(slot["rot"])
+	var start_global := draw_pile.get_global_rect().get_center() - CARD_SIZE * 0.5
+	var start_local := hand_area.get_global_transform().affine_inverse() * start_global
+	_kill_card_tween(node)
+	node.position = start_local
+	node.scale = Vector2(0.42, 0.42)
+	node.rotation_degrees = -24.0
+	node.modulate.a = 1.0
+	node.z_index = 60
+	var delay := float(order) * DRAW_STAGGER
+	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", target, DRAW_FLY_TIME).set_delay(delay)
+	t.tween_property(node, "scale", Vector2.ONE, DRAW_FLY_TIME * 0.85).set_delay(delay)
+	t.tween_property(node, "rotation_degrees", target_rot, DRAW_FLY_TIME * 0.85).set_delay(delay)
+	t.chain().tween_callback(func():
+		if is_instance_valid(node):
+			node.z_index = 0
+	)
+	_card_tweens[node] = t
 
 
 ## 计算 count 张手牌的扇形位置（不含动画），供布局与出牌后的收拢复用
@@ -387,6 +484,7 @@ func _reflow_without(index: int) -> void:
 
 func _start_battle() -> void:
 	_busy = false
+	_last_hand.clear()
 	log_box.clear()
 	result_label.visible = false
 	restart_button.visible = false
@@ -397,6 +495,12 @@ func _start_battle() -> void:
 
 
 func _refresh() -> void:
+	if _refresh_in_frame:
+		# 同一帧的重复刷新：只更新操作按钮状态，保留待抽列表
+		end_turn_button.disabled = state.finished or _busy
+		return
+	_refresh_in_frame = true
+	_reset_refresh_flag.call_deferred()
 	player_head.text = "鲸娘\n生命 %d / %d　格挡 %d\n%s" % [
 		state.player_hp, state.PLAYER_MAX_HP, state.player_block, state.player_status_text()
 	]
@@ -414,6 +518,12 @@ func _refresh() -> void:
 		state.turn, state.draw_pile.size(), state.discard_pile.size()
 	]
 	end_turn_button.disabled = state.finished or _busy
+	if draw_pile_label != null:
+		draw_pile_label.text = "×%d" % state.draw_pile.size()
+
+	# 先对比旧手牌，找出这次新抽到的牌（用于抽牌动画）
+	_pending_draw = _compute_draw_indices()
+	_last_hand = state.hand.duplicate()
 
 	for node in _card_nodes:
 		if is_instance_valid(node):
@@ -430,6 +540,10 @@ func _refresh() -> void:
 		hand_area.add_child(node)
 		_card_nodes.append(node)
 	_layout_hand.call_deferred()
+
+
+func _reset_refresh_flag() -> void:
+	_refresh_in_frame = false
 
 
 func _make_card(index: int) -> Button:
@@ -578,7 +692,7 @@ func _on_card_unhover(_index: int, node: Button) -> void:
 
 ## 根据光标在手牌区的水平位置选最近的牌作为悬停目标
 func _update_hand_hover() -> void:
-	if _busy or _dragging or hand_area == null:
+	if _busy or _dragging or _draw_animating or hand_area == null:
 		return
 	var mouse := hand_area.get_local_mouse_position()
 	var zone := Rect2(
