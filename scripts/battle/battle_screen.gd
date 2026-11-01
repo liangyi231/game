@@ -40,6 +40,8 @@ const DRAW_STAGGER := 0.07
 var state: BattleState
 
 var bg: TextureRect
+var ground_fill: TextureRect
+var _shake_tween: Tween
 var player_pic: TextureRect
 var enemy_pic: TextureRect
 var player_head: Label
@@ -127,6 +129,25 @@ func _build_ui() -> void:
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+
+	# 底部地面填充：背景图草坪以下会露出空白，用同色渐变补满
+	ground_fill = TextureRect.new()
+	var ground_grad := Gradient.new()
+	ground_grad.colors = PackedColorArray([
+		Color(0.37, 0.67, 0.47, 1.0), Color(0.16, 0.30, 0.22, 1.0)
+	])
+	ground_grad.offsets = PackedFloat32Array([0.0, 1.0])
+	var ground_tex := GradientTexture2D.new()
+	ground_tex.gradient = ground_grad
+	ground_tex.width = 8
+	ground_tex.height = 128
+	ground_tex.fill_from = Vector2(0.0, 0.0)
+	ground_tex.fill_to = Vector2(0.0, 1.0)
+	ground_fill.texture = ground_tex
+	ground_fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ground_fill.stretch_mode = TextureRect.STRETCH_SCALE
+	ground_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(ground_fill)
 
 	var bg_shade := ColorRect.new()
 	bg_shade.color = Color(0.02, 0.04, 0.09, 0.34)
@@ -314,6 +335,11 @@ func _layout_stage() -> void:
 	bg.position = Vector2((w - bg.size.x) * 0.5, grass_target - bg.size.y * GRASS_RATIO)
 	var grass_y := grass_target
 	_grass_y = grass_y
+
+	# 背景图草坪以下的空白用同色渐变补满，保证铺满全屏
+	var bg_bottom := bg.position.y + bg.size.y
+	ground_fill.position = Vector2(0.0, bg_bottom - 2.0)
+	ground_fill.size = Vector2(w, maxf(0.0, h - (bg_bottom - 2.0)))
 
 	# 角色：脚底落在草坪线上
 	player_pic.size = CHAR_SIZE
@@ -960,6 +986,7 @@ func _play_card_burn(id: String, start_rect: Rect2) -> void:
 	# 4) 焚烧：变橙红、放大、上飘、淡出（带火星粒子）
 	var burn_center := get_global_transform().affine_inverse() * visual.get_global_rect().get_center()
 	_spawn_burn_fx(burn_center)
+	_shake_screen(3.5, 0.18)
 	var burn := create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	burn.tween_property(visual, "modulate", Color(2.6, 0.6, 0.1, 0.0), 0.45)
 	burn.tween_property(visual, "scale", Vector2(1.95, 1.95), 0.45)
@@ -1032,6 +1059,22 @@ func _sfx(sound: String) -> void:
 	var player := get_node_or_null("/root/Sfx")
 	if player != null and player.has_method("play"):
 		player.play(sound)
+
+
+## 屏幕震动：按强度抖动整屏再复位（攻击/受伤反馈）
+func _shake_screen(strength: float, duration := 0.2) -> void:
+	if _shake_tween != null and _shake_tween.is_valid():
+		_shake_tween.kill()
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var steps := maxi(4, int(duration / 0.025))
+	var step_time := duration / float(steps)
+	_shake_tween = create_tween()
+	for i in steps:
+		var k := 1.0 - float(i) / float(steps)
+		var off := Vector2(rng.randf_range(-strength, strength), rng.randf_range(-strength, strength)) * k
+		_shake_tween.tween_property(self, "position", off, step_time)
+	_shake_tween.tween_property(self, "position", Vector2.ZERO, 0.05)
 
 
 # ---------------------------------------------------------------- 焚烧粒子
@@ -1121,6 +1164,11 @@ func _on_damaged(target: String, amount: int) -> void:
 	var pic: TextureRect = enemy_pic if target == "enemy" else player_pic
 	_flash(pic)
 	_spawn_damage_number(pic, amount)
+	# 震动：伤害越高越猛，玩家挨打额外加力
+	var strength := clampf(3.0 + float(amount) * 0.5, 3.0, 10.0)
+	if target == "player":
+		strength += 3.0
+	_shake_screen(strength)
 
 
 ## 受伤变红：整体闪红再缓动恢复
