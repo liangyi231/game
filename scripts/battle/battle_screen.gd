@@ -24,9 +24,14 @@ const CHAR_SIZE := Vector2(200, 230)
 const CARD_SIZE := Vector2(140, 184)
 const HAND_AREA_HEIGHT := 250.0
 const FAN_SPREAD_DEG := 12.0
-const HOVER_LIFT := 54.0
-const HOVER_SCALE := 1.14
-const HOVER_TIME := 0.2
+const HOVER_LIFT := 58.0
+const HOVER_SCALE := 1.16
+const HOVER_TIME := 0.26
+## 悬停时两侧卡牌让位的最大距离
+const NEIGHBOR_PUSH := 30.0
+## 入牌动画
+const ENTRY_TIME := 0.22
+const ENTRY_STAGGER := 0.045
 
 var state: BattleState
 
@@ -50,6 +55,10 @@ var fx_layer: Control
 
 var _card_nodes: Array[Button] = []
 var _card_base: Dictionary = {}
+## 每张卡当前的动画 tween，重新触发时先杀掉，避免叠加抖动
+var _card_tweens: Dictionary = {}
+## 下次布局时是否播放入牌动画（刷新手牌后为 true）
+var _cards_entry := false
 var _enemy_rest_pos := Vector2.ZERO
 var _pose_tween: Tween
 var _busy := false
@@ -289,26 +298,76 @@ func _layout_hand() -> void:
 	var n := _card_nodes.size()
 	if n == 0:
 		return
+	var slots := _hand_slots(n)
+	for i in n:
+		var node := _card_nodes[i]
+		if not is_instance_valid(node):
+			continue
+		var slot: Dictionary = slots[i]
+		node.position = slot["pos"]
+		node.rotation_degrees = float(slot["rot"])
+		_card_base[node] = slot
+
+	# 入牌动画：错峰从下方轻浮上来 + 淡入（炉石那种一张张落位的感觉）
+	if _cards_entry and n > 0:
+		_cards_entry = false
+		for i in n:
+			var card_node := _card_nodes[i]
+			if not is_instance_valid(card_node):
+				continue
+			var base: Dictionary = _card_base.get(card_node, {})
+			if base.is_empty():
+				continue
+			var target: Vector2 = base["pos"]
+			card_node.position = target + Vector2(0.0, 28.0)
+			card_node.scale = Vector2(0.96, 0.96)
+			card_node.modulate.a = 0.0
+			var t := card_node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			t.tween_property(card_node, "position", target, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
+			t.tween_property(card_node, "scale", Vector2.ONE, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
+			t.tween_property(card_node, "modulate:a", 1.0, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
+
+
+## 计算 count 张手牌的扇形位置（不含动画），供布局与出牌后的收拢复用
+func _hand_slots(count: int) -> Array:
 	var w := hand_area.size.x
 	if w < 100.0:
 		w = 1280.0
 	var h := hand_area.size.y
 	if h < 100.0:
 		h = HAND_AREA_HEIGHT
-	var spacing := minf(116.0, (w - CARD_SIZE.x) / maxf(1.0, float(n)))
-	var total := spacing * float(n - 1)
+	var spacing := minf(116.0, (w - CARD_SIZE.x) / maxf(1.0, float(count)))
+	var total := spacing * float(count - 1)
 	var start_x := (w - total - CARD_SIZE.x) * 0.5
-	for i in n:
-		var node := _card_nodes[i]
+	var out: Array = []
+	for i in count:
+		var t := 0.0 if count == 1 else (float(i) / float(count - 1)) * 2.0 - 1.0
+		out.append({
+			"pos": Vector2(start_x + spacing * float(i), h - CARD_SIZE.y - 46.0 + absf(t) * 14.0),
+			"rot": t * FAN_SPREAD_DEG,
+		})
+	return out
+
+
+## 打出一张牌后，把剩下的牌平滑收拢（不重建节点）
+func _reflow_without(index: int) -> void:
+	var remaining: Array[Button] = []
+	for i in _card_nodes.size():
+		if i == index:
+			continue
+		remaining.append(_card_nodes[i])
+	var slots := _hand_slots(remaining.size())
+	for k in remaining.size():
+		var node := remaining[k]
 		if not is_instance_valid(node):
 			continue
-		var t := 0.0 if n == 1 else (float(i) / float(n - 1)) * 2.0 - 1.0
-		var angle := t * FAN_SPREAD_DEG
-		var x := start_x + spacing * float(i)
-		var y := h - CARD_SIZE.y - 46.0 + absf(t) * 14.0
-		node.position = Vector2(x, y)
-		node.rotation_degrees = angle
-		_card_base[node] = {"pos": node.position, "rot": angle}
+		var slot: Dictionary = slots[k]
+		_kill_card_tween(node)
+		var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		t.tween_property(node, "position", slot["pos"], 0.18)
+		t.tween_property(node, "rotation_degrees", float(slot["rot"]), 0.18)
+		t.tween_property(node, "scale", Vector2.ONE, 0.18)
+		_card_tweens[node] = t
 
 
 # ---------------------------------------------------------------- 数据 → UI
@@ -348,6 +407,8 @@ func _refresh() -> void:
 			node.queue_free()
 	_card_nodes.clear()
 	_card_base.clear()
+	_card_tweens.clear()
+	_cards_entry = true
 	card_tip.visible = false
 
 	for i in state.hand.size():
@@ -423,6 +484,21 @@ func _build_card_visual(id: String) -> Button:
 	desc_label.size = Vector2(CARD_SIZE.x - 18, 76)
 	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	node.add_child(desc_label)
+
+	# 金色描边光晕（悬停时淡入，炉石那种选中高亮感）
+	var glow := Panel.new()
+	var gsb := StyleBoxFlat.new()
+	gsb.bg_color = Color(0, 0, 0, 0)
+	gsb.border_color = Color(1.0, 0.86, 0.45, 1.0)
+	gsb.set_border_width_all(3)
+	gsb.set_corner_radius_all(8)
+	glow.add_theme_stylebox_override("panel", gsb)
+	glow.position = Vector2(-5, -5)
+	glow.size = CARD_SIZE + Vector2(10, 10)
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.modulate.a = 0.0
+	node.add_child(glow)
+	node.set_meta("glow", glow)
 	return node
 
 
@@ -434,12 +510,17 @@ func _on_card_hover(index: int, node: Button) -> void:
 	var base: Dictionary = _card_base.get(node, {})
 	if base.is_empty():
 		return
-	node.z_index = 100
-	# 平滑凸起：位移 + 放大 + 旋转回正，TRANS_CUBIC/EASE_OUT 减少生硬感
-	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	t.tween_property(node, "position", Vector2(base["pos"].x, base["pos"].y - HOVER_LIFT), HOVER_TIME)
+	node.z_index = 120
+	_kill_card_tween(node)
+	# 弹性抬起：TRANS_BACK 会先略微过冲再落定，比匀速更"跟手"
+	var target: Vector2 = (base["pos"] as Vector2) + Vector2(0.0, -HOVER_LIFT)
+	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", target, HOVER_TIME)
 	t.tween_property(node, "scale", Vector2(HOVER_SCALE, HOVER_SCALE), HOVER_TIME)
 	t.tween_property(node, "rotation_degrees", 0.0, HOVER_TIME)
+	_card_tweens[node] = t
+	_fade_glow(node, 1.0, 0.14)
+	_push_neighbors(index, node)
 	_show_card_tip(index, node)
 
 
@@ -450,11 +531,61 @@ func _on_card_unhover(_index: int, node: Button) -> void:
 	if base.is_empty():
 		return
 	node.z_index = 0
-	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	t.tween_property(node, "position", base["pos"], HOVER_TIME)
-	t.tween_property(node, "scale", Vector2.ONE, HOVER_TIME)
-	t.tween_property(node, "rotation_degrees", float(base["rot"]), HOVER_TIME)
+	_kill_card_tween(node)
+	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", base["pos"], 0.2)
+	t.tween_property(node, "scale", Vector2.ONE, 0.2)
+	t.tween_property(node, "rotation_degrees", float(base["rot"]), 0.2)
+	_card_tweens[node] = t
+	_fade_glow(node, 0.0, 0.16)
+	_restore_neighbors()
 	card_tip.visible = false
+
+
+## 悬停时把左右的牌往外推开（越远推得越少），手牌有"被拨开"的生动感
+func _push_neighbors(hover_index: int, hover_node: Button) -> void:
+	for j in _card_nodes.size():
+		var other := _card_nodes[j]
+		if other == hover_node or not is_instance_valid(other):
+			continue
+		var base: Dictionary = _card_base.get(other, {})
+		if base.is_empty():
+			continue
+		var dist := absi(j - hover_index)
+		var push := NEIGHBOR_PUSH * clampf(1.0 - float(dist) / 3.0, 0.0, 1.0)
+		var dir := -1.0 if j < hover_index else 1.0
+		_kill_card_tween(other)
+		var t := other.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		t.tween_property(other, "position", (base["pos"] as Vector2) + Vector2(dir * push, 0.0), 0.18)
+		_card_tweens[other] = t
+
+
+func _restore_neighbors() -> void:
+	for other in _card_nodes:
+		if not is_instance_valid(other):
+			continue
+		var base: Dictionary = _card_base.get(other, {})
+		if base.is_empty():
+			continue
+		_kill_card_tween(other)
+		var t := other.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		t.tween_property(other, "position", base["pos"], 0.18)
+		_card_tweens[other] = t
+
+
+func _fade_glow(node: Button, target_alpha: float, time: float) -> void:
+	var glow: Variant = node.get_meta("glow", null)
+	if glow is Control and is_instance_valid(glow):
+		var gt := (glow as Control).create_tween()
+		gt.tween_property(glow, "modulate:a", target_alpha, time)
+
+
+func _kill_card_tween(node: Node) -> void:
+	if _card_tweens.has(node):
+		var t: Tween = _card_tweens[node]
+		if t != null and t.is_valid():
+			t.kill()
+		_card_tweens.erase(node)
 
 
 func _show_card_tip(index: int, node: Button) -> void:
@@ -506,6 +637,7 @@ func _on_card_pressed(index: int) -> void:
 	if node != null and is_instance_valid(node):
 		start_rect = node.get_global_rect()
 		node.visible = false
+		_reflow_without(index)
 
 	# 先飞到屏幕中央烧掉，再结算效果
 	await _play_card_burn(id, start_rect)
@@ -515,7 +647,7 @@ func _on_card_pressed(index: int) -> void:
 	_refresh()
 
 
-## 出牌动画：卡片飞到屏幕中央 → 焚烧（放大 + 变橙红 + 淡出）
+## 出牌动画：过冲起飞 → 空中回正 → 中央白闪 → 焚烧（参考炉石打出手感）
 func _play_card_burn(id: String, start_rect: Rect2) -> void:
 	var visual := _build_card_visual(id)
 	visual.size = CARD_SIZE
@@ -526,19 +658,35 @@ func _play_card_burn(id: String, start_rect: Rect2) -> void:
 
 	var start_local := get_global_transform().affine_inverse() * start_rect.position
 	visual.position = start_local
-	visual.scale = Vector2.ONE
+	visual.scale = Vector2(0.96, 0.96)
+	visual.rotation_degrees = 0.0
 
 	var target_pos := Vector2(size.x * 0.5 - CARD_SIZE.x * 0.5, size.y * 0.36 - CARD_SIZE.y * 0.5)
-	var fly := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	fly.tween_property(visual, "position", target_pos, 0.26)
-	fly.tween_property(visual, "scale", Vector2(1.45, 1.45), 0.26)
-	fly.tween_property(visual, "rotation_degrees", 0.0, 0.26)
+
+	# 1) 起飞：TRANS_BACK 带一点过冲，飞向中央时略有回弹
+	var fly := create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	fly.tween_property(visual, "position", target_pos, 0.34)
+	fly.tween_property(visual, "scale", Vector2(1.5, 1.5), 0.34)
+	fly.tween_property(visual, "rotation_degrees", 5.0, 0.34)
 	await fly.finished
 
+	# 2) 空中回正 + 收势
+	var settle := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	settle.tween_property(visual, "rotation_degrees", 0.0, 0.12)
+	settle.tween_property(visual, "scale", Vector2(1.56, 1.56), 0.12)
+	await settle.finished
+
+	# 3) 白闪：打出瞬间"一亮"
+	var flash := create_tween()
+	flash.tween_property(visual, "modulate", Color(2.0, 1.8, 1.3, 1.0), 0.07)
+	flash.tween_property(visual, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.07)
+	await flash.finished
+
+	# 4) 焚烧：变橙红、放大、上飘、淡出
 	var burn := create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	burn.tween_property(visual, "modulate", Color(2.4, 0.55, 0.15, 0.0), 0.4)
-	burn.tween_property(visual, "scale", Vector2(1.75, 1.75), 0.4)
-	burn.tween_property(visual, "position", target_pos + Vector2(0, -34), 0.4)
+	burn.tween_property(visual, "modulate", Color(2.6, 0.6, 0.1, 0.0), 0.45)
+	burn.tween_property(visual, "scale", Vector2(1.95, 1.95), 0.45)
+	burn.tween_property(visual, "position", target_pos + Vector2(0, -46), 0.45)
 	await burn.finished
 
 	if is_instance_valid(visual):
