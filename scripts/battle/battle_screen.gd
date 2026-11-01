@@ -63,6 +63,8 @@ var _cards_entry := false
 var _enemy_rest_pos := Vector2.ZERO
 var _pose_tween: Tween
 var _busy := false
+## 当前处于悬停态的卡牌（同一时刻只允许一张，避免邻牌被推到光标下触发级联）
+var _hover_node: Button = null
 ## 草坪线在屏幕上的 y 坐标（拖拽判定用）
 var _grass_y := 0.0
 # 拖拽出牌状态
@@ -336,6 +338,7 @@ func _layout_hand() -> void:
 			t.tween_property(card_node, "position", target, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
 			t.tween_property(card_node, "scale", Vector2.ONE, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
 			t.tween_property(card_node, "modulate:a", 1.0, ENTRY_TIME).set_delay(i * ENTRY_STAGGER)
+	_update_hand_hover.call_deferred()
 
 
 ## 计算 count 张手牌的扇形位置（不含动画），供布局与出牌后的收拢复用
@@ -418,6 +421,7 @@ func _refresh() -> void:
 	_card_nodes.clear()
 	_card_base.clear()
 	_card_tweens.clear()
+	_hover_node = null
 	_cards_entry = true
 	card_tip.visible = false
 
@@ -433,8 +437,6 @@ func _make_card(index: int) -> Button:
 	var node := _build_card_visual(id)
 	if not state.can_play(index):
 		node.modulate = Color(0.55, 0.55, 0.62, 1.0)
-	node.mouse_entered.connect(_on_card_hover.bind(index, node))
-	node.mouse_exited.connect(_on_card_unhover.bind(index, node))
 	node.gui_input.connect(_on_card_gui_input.bind(index, node))
 	return node
 
@@ -541,17 +543,23 @@ func _build_card_visual(id: String) -> Button:
 func _on_card_hover(index: int, node: Button) -> void:
 	if _busy or _dragging or not is_instance_valid(node):
 		return
+	if _hover_node == node:
+		return
+	# 切换悬停：先把上一张恢复，否则被打断的 tween 会把它卡在半空
+	if _hover_node != null and is_instance_valid(_hover_node):
+		_restore_card(_hover_node, 0.16)
+	_hover_node = node
+	card_tip.visible = false
 	var base: Dictionary = _card_base.get(node, {})
 	if base.is_empty():
 		return
 	node.z_index = 120
 	_kill_card_tween(node)
-	# 弹性抬起：TRANS_BACK 会先略微过冲再落定，比匀速更"跟手"
+	# 弹性抬起，但**保留扇形角度**：不拉直就不会有"卡在 0°"的状态
 	var target: Vector2 = (base["pos"] as Vector2) + Vector2(0.0, -HOVER_LIFT)
 	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(node, "position", target, HOVER_TIME)
 	t.tween_property(node, "scale", Vector2(HOVER_SCALE, HOVER_SCALE), HOVER_TIME)
-	t.tween_property(node, "rotation_degrees", 0.0, HOVER_TIME)
 	_card_tweens[node] = t
 	_fade_glow(node, 1.0, 0.14)
 	_push_neighbors(index, node)
@@ -559,8 +567,53 @@ func _on_card_hover(index: int, node: Button) -> void:
 
 
 func _on_card_unhover(_index: int, node: Button) -> void:
-	if _dragging:
+	if _dragging or not is_instance_valid(node):
 		return
+	if _hover_node == node:
+		_hover_node = null
+	_fade_glow(node, 0.0, 0.16)
+	_restore_neighbors()
+	card_tip.visible = false
+
+
+## 根据光标在手牌区的水平位置选最近的牌作为悬停目标
+func _update_hand_hover() -> void:
+	if _busy or _dragging or hand_area == null:
+		return
+	var mouse := hand_area.get_local_mouse_position()
+	var zone := Rect2(
+		Vector2(-60.0, -HOVER_LIFT - 70.0),
+		hand_area.size + Vector2(120.0, HOVER_LIFT + 70.0)
+	)
+	if not zone.has_point(mouse):
+		if _hover_node != null and is_instance_valid(_hover_node):
+			_hover_node = null
+			_restore_neighbors()
+			card_tip.visible = false
+		return
+	var best := -1
+	var best_dist := INF
+	for i in _card_nodes.size():
+		var node := _card_nodes[i]
+		if not is_instance_valid(node):
+			continue
+		var base: Dictionary = _card_base.get(node, {})
+		if base.is_empty():
+			continue
+		var center: Vector2 = (base["pos"] as Vector2) + CARD_SIZE * 0.5
+		var d := absf(mouse.x - center.x)
+		if d < best_dist:
+			best_dist = d
+			best = i
+	if best < 0:
+		return
+	var target := _card_nodes[best]
+	if target != _hover_node:
+		_on_card_hover(best, target)
+
+
+## 把一张牌恢复到手牌槽位（位置 / 旋转 / 缩放都归位）
+func _restore_card(node: Button, time: float) -> void:
 	if not is_instance_valid(node):
 		return
 	var base: Dictionary = _card_base.get(node, {})
@@ -569,13 +622,10 @@ func _on_card_unhover(_index: int, node: Button) -> void:
 	node.z_index = 0
 	_kill_card_tween(node)
 	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	t.tween_property(node, "position", base["pos"], 0.2)
-	t.tween_property(node, "scale", Vector2.ONE, 0.2)
-	t.tween_property(node, "rotation_degrees", float(base["rot"]), 0.2)
+	t.tween_property(node, "position", base["pos"], time)
+	t.tween_property(node, "rotation_degrees", float(base["rot"]), time)
+	t.tween_property(node, "scale", Vector2.ONE, time)
 	_card_tweens[node] = t
-	_fade_glow(node, 0.0, 0.16)
-	_restore_neighbors()
-	card_tip.visible = false
 
 
 # ---------------------------------------------------------------- 拖拽出牌
@@ -603,6 +653,7 @@ func _begin_drag(index: int, node: Button) -> void:
 	_drag_index = index
 	_drag_node = node
 	_drag_moved = false
+	_hover_node = null
 	# 记录抓取点与牌左上角的偏移，拖动时牌不会"跳"
 	_drag_offset = node.position - hand_area.get_local_mouse_position()
 	node.z_index = 500
@@ -672,17 +723,7 @@ func _push_neighbors(hover_index: int, hover_node: Button) -> void:
 
 func _restore_neighbors() -> void:
 	for other in _card_nodes:
-		if not is_instance_valid(other):
-			continue
-		var base: Dictionary = _card_base.get(other, {})
-		if base.is_empty():
-			continue
-		_kill_card_tween(other)
-		var t := other.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		t.tween_property(other, "position", base["pos"], 0.18)
-		t.tween_property(other, "rotation_degrees", float(base["rot"]), 0.18)
-		t.tween_property(other, "scale", Vector2.ONE, 0.18)
-		_card_tweens[other] = t
+		_restore_card(other, 0.18)
 
 
 func _fade_glow(node: Button, target_alpha: float, time: float) -> void:
@@ -930,6 +971,10 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 			_end_drag()
 			return
+	# 悬停判定按"手牌区里离光标最近的牌"来算，不依赖卡片的 enter/exit，
+	# 这样卡片抬起离开光标下方也不会丢失悬停（否则会 enter/exit 抖动）。
+	if event is InputEventMouseMotion and not _dragging:
+		_update_hand_hover()
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	if event.keycode == KEY_F11:
