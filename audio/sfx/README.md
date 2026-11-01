@@ -9,14 +9,14 @@
 
 | 文件名 | 来源视频 | 触发时机 |
 |---|---|---|
-| `seek.wav` | 4384b091…mp4「Seek Seek（与我何干）」 | **大肥鱼行动**：玩家出任意牌 |
+| `seekseek.wav` | 4384b091…mp4「Seek Seek（与我何干）」 | **大肥鱼行动**：玩家出任意牌 |
 | `laugh.wav` | video_20261101_234257.mp4（奶龙捧腹大笑） | **奶龙行动**：奶龙出手 / 格挡 |
 | `hurt.wav` | ea94ebece…mp4（截取前 1.2 秒） | **受击**：任何角色实际掉血 |
 
 处理：`ffmpeg` 90Hz 高通 + 首尾静音裁剪 + 响度归一（-16 LUFS / TP -1.5）。
 **不做人声分离**（之前 demucs 分离会产生「回音/水声」感，已弃用）。
 
-旧的 `deepdepp.wav`（Deep Deep）与 demucs 版 `seekseek.wav` 已删除。
+旧的 `deepdepp.wav`（Deep Deep）与 demucs 版旧 `seekseek` 均已删除，现在只保留 Seek Seek 这一条行动音。
 
 ## 可加但暂未接的
 

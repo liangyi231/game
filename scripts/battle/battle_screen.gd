@@ -509,7 +509,7 @@ func _on_card_pressed(index: int) -> void:
 
 	# 先飞到屏幕中央烧掉，再结算效果
 	await _play_card_burn(id, start_rect)
-	_sfx("seek")
+	_sfx("seekseek")
 	state.play_card(index)
 	_busy = false
 	_refresh()
