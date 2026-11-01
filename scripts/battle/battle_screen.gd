@@ -9,6 +9,7 @@ const ENEMY_IDLE_TEXTURE := "res://art/enemies/nailong_idle.png"
 const ENEMY_ACTION_TEXTURE := "res://art/enemies/nailong_action.png"
 const PLAYER_TEXTURE := "res://art/characters/whale_girl.png"
 const CARD_ART := "res://art/ui/card_face.jpg"
+const CARD_SHADER := "res://art/ui/card_round.gdshader"
 const BG_ART := "res://art/bg/night_sky.jpg"
 
 const POSE_TIME := 0.1
@@ -62,6 +63,14 @@ var _cards_entry := false
 var _enemy_rest_pos := Vector2.ZERO
 var _pose_tween: Tween
 var _busy := false
+## 草坪线在屏幕上的 y 坐标（拖拽判定用）
+var _grass_y := 0.0
+# 拖拽出牌状态
+var _dragging := false
+var _drag_index := -1
+var _drag_node: Button = null
+var _drag_offset := Vector2.ZERO
+var _drag_moved := false
 
 
 func _ready() -> void:
@@ -250,6 +259,7 @@ func _layout_stage() -> void:
 	var grass_target := h * GRASS_SCREEN_RATIO
 	bg.position = Vector2((w - bg.size.x) * 0.5, grass_target - bg.size.y * GRASS_RATIO)
 	var grass_y := grass_target
+	_grass_y = grass_y
 
 	# 角色：脚底落在草坪线上
 	player_pic.size = CHAR_SIZE
@@ -425,7 +435,7 @@ func _make_card(index: int) -> Button:
 		node.modulate = Color(0.55, 0.55, 0.62, 1.0)
 	node.mouse_entered.connect(_on_card_hover.bind(index, node))
 	node.mouse_exited.connect(_on_card_unhover.bind(index, node))
-	node.pressed.connect(_on_card_pressed.bind(index))
+	node.gui_input.connect(_on_card_gui_input.bind(index, node))
 	return node
 
 
@@ -440,16 +450,40 @@ func _build_card_visual(id: String) -> Button:
 	node.focus_mode = Control.FOCUS_NONE
 	node.mouse_filter = Control.MOUSE_FILTER_STOP
 
+	# 柔和投影：让卡牌"浮"在夜景上
+	var shadow := Panel.new()
+	var shadow_sb := StyleBoxFlat.new()
+	shadow_sb.bg_color = Color(0, 0, 0, 0.28)
+	shadow_sb.set_corner_radius_all(14)
+	shadow_sb.shadow_color = Color(0, 0, 0, 0.45)
+	shadow_sb.shadow_size = 8
+	shadow_sb.shadow_offset = Vector2(0, 5)
+	shadow.add_theme_stylebox_override("panel", shadow_sb)
+	shadow.position = Vector2(-2, -1)
+	shadow.size = CARD_SIZE + Vector2(4, 8)
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.add_child(shadow)
+
 	var art := TextureRect.new()
 	art.texture = load(CARD_ART)
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	art.size = CARD_SIZE
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 圆角遮罩（着色器按 UV 裁出圆角，卡面更"光滑"）
+	var card_mat := ShaderMaterial.new()
+	card_mat.shader = load(CARD_SHADER)
+	card_mat.set_shader_parameter("card_size", CARD_SIZE)
+	card_mat.set_shader_parameter("radius", 12.0)
+	art.material = card_mat
 	node.add_child(art)
 
-	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.03, 0.08, 0.55)
+	# 圆角半透明底衬，保证文字可读
+	var shade := Panel.new()
+	var shade_sb := StyleBoxFlat.new()
+	shade_sb.bg_color = Color(0.02, 0.03, 0.08, 0.55)
+	shade_sb.set_corner_radius_all(9)
+	shade.add_theme_stylebox_override("panel", shade_sb)
 	shade.position = Vector2(7, 7)
 	shade.size = CARD_SIZE - Vector2(14, 14)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -505,7 +539,7 @@ func _build_card_visual(id: String) -> Button:
 # ---------------------------------------------------------------- 手牌交互
 
 func _on_card_hover(index: int, node: Button) -> void:
-	if _busy or not is_instance_valid(node):
+	if _busy or _dragging or not is_instance_valid(node):
 		return
 	var base: Dictionary = _card_base.get(node, {})
 	if base.is_empty():
@@ -525,6 +559,8 @@ func _on_card_hover(index: int, node: Button) -> void:
 
 
 func _on_card_unhover(_index: int, node: Button) -> void:
+	if _dragging:
+		return
 	if not is_instance_valid(node):
 		return
 	var base: Dictionary = _card_base.get(node, {})
@@ -540,6 +576,80 @@ func _on_card_unhover(_index: int, node: Button) -> void:
 	_fade_glow(node, 0.0, 0.16)
 	_restore_neighbors()
 	card_tip.visible = false
+
+
+# ---------------------------------------------------------------- 拖拽出牌
+
+func _on_card_gui_input(event: InputEvent, index: int, node: Button) -> void:
+	if _busy:
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_begin_drag(index, node)
+			node.accept_event()
+		else:
+			_end_drag()
+			node.accept_event()
+
+
+func _begin_drag(index: int, node: Button) -> void:
+	if not is_instance_valid(node):
+		return
+	if index < 0 or index >= state.hand.size():
+		return
+	if not state.can_play(index):
+		return
+	_dragging = true
+	_drag_index = index
+	_drag_node = node
+	_drag_moved = false
+	# 记录抓取点与牌左上角的偏移，拖动时牌不会"跳"
+	_drag_offset = node.position - hand_area.get_local_mouse_position()
+	node.z_index = 500
+	_kill_card_tween(node)
+	_fade_glow(node, 1.0, 0.1)
+	card_tip.visible = false
+	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "scale", Vector2(1.1, 1.1), 0.12)
+	t.tween_property(node, "rotation_degrees", 0.0, 0.12)
+	_card_tweens[node] = t
+
+
+func _update_drag() -> void:
+	if _drag_node == null or not is_instance_valid(_drag_node):
+		return
+	var target := hand_area.get_local_mouse_position() + _drag_offset
+	if (target - _drag_node.position).length() > 3.0:
+		_drag_moved = true
+	_drag_node.position = target
+
+
+func _end_drag() -> void:
+	if not _dragging:
+		return
+	var node := _drag_node
+	var idx := _drag_index
+	_dragging = false
+	_drag_node = null
+	_drag_index = -1
+	if node == null or not is_instance_valid(node):
+		return
+	node.z_index = 0
+	_fade_glow(node, 0.0, 0.12)
+	# 拖到草坪线以上 = 打进战场；否则弹回手牌
+	var dropped_in_field := node.get_global_rect().get_center().y < _grass_y - 40.0
+	if not _drag_moved or dropped_in_field:
+		_on_card_pressed(idx)
+		return
+	var base: Dictionary = _card_base.get(node, {})
+	if base.is_empty():
+		return
+	_kill_card_tween(node)
+	var t := node.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", base["pos"], 0.24)
+	t.tween_property(node, "rotation_degrees", float(base["rot"]), 0.24)
+	t.tween_property(node, "scale", Vector2.ONE, 0.24)
+	_card_tweens[node] = t
 
 
 ## 悬停时把左右的牌往外推开（越远推得越少），手牌有"被拨开"的生动感
@@ -570,6 +680,8 @@ func _restore_neighbors() -> void:
 		_kill_card_tween(other)
 		var t := other.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		t.tween_property(other, "position", base["pos"], 0.18)
+		t.tween_property(other, "rotation_degrees", float(base["rot"]), 0.18)
+		t.tween_property(other, "scale", Vector2.ONE, 0.18)
 		_card_tweens[other] = t
 
 
@@ -626,8 +738,8 @@ func _on_card_pressed(index: int) -> void:
 	if not state.can_play(index):
 		return
 	_busy = true
+	_dragging = false
 	card_tip.visible = false
-	_layout_hand()
 
 	var id: String = state.hand[index]
 	var start_rect := Rect2(Vector2.ZERO, CARD_SIZE)
@@ -637,7 +749,8 @@ func _on_card_pressed(index: int) -> void:
 	if node != null and is_instance_valid(node):
 		start_rect = node.get_global_rect()
 		node.visible = false
-		_reflow_without(index)
+	_layout_hand()
+	_reflow_without(index)
 
 	# 先飞到屏幕中央烧掉，再结算效果
 	await _play_card_burn(id, start_rect)
@@ -808,6 +921,15 @@ func _spawn_damage_number(pic: TextureRect, amount: int) -> void:
 # ---------------------------------------------------------------- 全屏
 
 func _input(event: InputEvent) -> void:
+	# 拖拽中：鼠标移动跟手，松开决定打出还是弹回
+	if _dragging:
+		if event is InputEventMouseMotion:
+			_update_drag()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_end_drag()
+			return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	if event.keycode == KEY_F11:
