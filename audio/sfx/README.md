@@ -11,12 +11,13 @@
 |---|---|---|
 | `seekseek.wav` | 4384b091…mp4「Seek Seek（与我何干）」 | **大肥鱼行动**：玩家出任意牌 |
 | `laugh.wav` | video_20261101_234257.mp4（奶龙捧腹大笑） | **奶龙行动**：奶龙出手 / 格挡 |
-| `hurt.wav` | ea94ebece…mp4（截取前 1.2 秒） | **受击**：任何角色实际掉血 |
+| `hurt.wav` | **原创合成撞击声**（`tools/make_hurt_sfx.py`，不含任何人声） | **受击**：任何角色实际掉血 |
 
 处理：`ffmpeg` 90Hz 高通 + 首尾静音裁剪 + 响度归一（-16 LUFS / TP -1.5）。
 **不做人声分离**（之前 demucs 分离会产生「回音/水声」感，已弃用）。
 
-旧的 `deepdepp.wav`（Deep Deep）与 demucs 版旧 `seekseek` 均已删除，现在只保留 Seek Seek 这一条行动音。
+Deep Deep 相关：`deepdepp.wav` 已删除，`.godot` 导入缓存里的残留也已清掉；
+受击原本取自第三段视频（那段带 Deep Deep 人声），现改为**纯合成撞击声**，全项目不再有任何 deep 人声。
 
 ## 可加但暂未接的
 
