@@ -169,7 +169,7 @@ func _build_ui() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom_bar.add_child(spacer)
 	var hint := Label.new()
-	hint.text = "F11 切换全屏"
+	hint.text = "F11 全屏 · M 静音"
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color("#5c7896"))
 	bottom_bar.add_child(hint)
@@ -663,6 +663,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_F11:
 		_toggle_fullscreen()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_M:
+		var music := get_node_or_null("/root/Music")
+		if music != null and music.has_method("toggle_mute"):
+			music.toggle_mute()
 		get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_ESCAPE and _is_fullscreen():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
