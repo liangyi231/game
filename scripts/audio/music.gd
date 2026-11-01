@@ -7,7 +7,7 @@ extends Node
 
 const MUSIC_DIR := "res://audio/music/"
 const TRACK_NAMES := ["bgm", "una_mas_funk_2"]
-const DEFAULT_VOLUME_DB := -12.0
+const DEFAULT_VOLUME_DB := -9.0
 
 var player: AudioStreamPlayer
 var muted := false
