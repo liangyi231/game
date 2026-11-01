@@ -11,6 +11,8 @@ const DEFAULT_VOLUME_DB := -9.0
 
 var player: AudioStreamPlayer
 var muted := false
+## 0.0 ~ 1.0 的用户音量（1.0 = 默认 -9 dB）
+var volume_linear := 1.0
 
 
 func _ready() -> void:
@@ -21,13 +23,26 @@ func _ready() -> void:
 	play_bgm()
 
 
+## 设置背景音乐音量（0~1），设置面板用
+func set_volume_linear(value: float) -> void:
+	volume_linear = clampf(value, 0.0, 1.0)
+	_apply_volume()
+
+
+func _apply_volume() -> void:
+	if muted or volume_linear <= 0.001:
+		player.volume_db = -80.0
+	else:
+		player.volume_db = DEFAULT_VOLUME_DB + linear_to_db(volume_linear)
+
+
 func play_bgm() -> void:
 	var stream := _load_stream()
 	if stream == null:
 		return
 	_enable_loop(stream)
 	player.stream = stream
-	player.volume_db = -80.0 if muted else DEFAULT_VOLUME_DB
+	_apply_volume()
 	player.play()
 
 
@@ -49,7 +64,7 @@ func _on_finished() -> void:
 
 func toggle_mute() -> bool:
 	muted = not muted
-	player.volume_db = -80.0 if muted else DEFAULT_VOLUME_DB
+	_apply_volume()
 	return muted
 
 

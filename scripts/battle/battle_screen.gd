@@ -75,6 +75,20 @@ var fx_layer: Control
 ## 软圆点贴图（火星/光斑粒子用，运行时生成，不占美术资源）
 var _soft_dot: Texture2D
 
+# 开始界面 / 设置 / 图标说明
+const SETTINGS_PATH := "user://settings.cfg"
+var start_overlay: Control
+var settings_panel: PanelContainer
+var music_slider: HSlider
+var sfx_slider: HSlider
+var music_value_label: Label
+var sfx_value_label: Label
+var settings_button: Button
+var status_tip: PanelContainer
+var status_tip_label: RichTextLabel
+var _music_vol := 0.8
+var _sfx_vol := 0.8
+
 var _card_nodes: Array[Button] = []
 var _card_base: Dictionary = {}
 ## 每张卡当前的动画 tween，重新触发时先杀掉，避免叠加抖动
@@ -107,14 +121,15 @@ var _drag_moved := false
 
 func _ready() -> void:
 	_apply_font()
+	_load_settings()
 	_build_ui()
 	state = BattleState.new()
 	state.logged.connect(_on_log)
 	state.changed.connect(_refresh)
 	state.battle_over.connect(_on_battle_over)
 	state.damaged.connect(_on_damaged)
-	_start_battle()
 	_layout_stage.call_deferred()
+	_show_start_screen.call_deferred()
 
 
 func _notification(what: int) -> void:
@@ -279,6 +294,12 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color("#5c7896"))
 	bottom_bar.add_child(hint)
+	settings_button = Button.new()
+	settings_button.text = "设置"
+	settings_button.custom_minimum_size = Vector2(96, 46)
+	settings_button.add_theme_font_size_override("font_size", 16)
+	settings_button.pressed.connect(_open_settings)
+	bottom_bar.add_child(settings_button)
 	restart_button = Button.new()
 	restart_button.text = "重新开始"
 	restart_button.custom_minimum_size = Vector2(130, 46)
@@ -319,12 +340,304 @@ func _build_ui() -> void:
 	card_tip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card_tip.add_child(card_tip_label)
 
+	# --- 状态图标说明浮窗 ---
+	status_tip = PanelContainer.new()
+	status_tip.visible = false
+	status_tip.z_index = 1100
+	status_tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var st_style := StyleBoxFlat.new()
+	st_style.bg_color = Color(0.03, 0.06, 0.12, 0.97)
+	st_style.border_color = Color(0.55, 0.72, 0.95, 1.0)
+	st_style.set_border_width_all(2)
+	st_style.set_corner_radius_all(8)
+	st_style.set_content_margin_all(10)
+	status_tip.add_theme_stylebox_override("panel", st_style)
+	add_child(status_tip)
+	status_tip_label = RichTextLabel.new()
+	status_tip_label.bbcode_enabled = true
+	status_tip_label.fit_content = true
+	status_tip_label.scroll_active = false
+	status_tip_label.custom_minimum_size = Vector2(260, 0)
+	status_tip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_tip.add_child(status_tip_label)
+
 	# --- 伤害数字所在的特效层（压在手牌之上、浮窗之下） ---
 	fx_layer = Control.new()
 	fx_layer.z_index = 900
 	fx_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(fx_layer)
+
+
+# ---------------------------------------------------------------- 开始界面 / 设置
+
+func _make_menu_button(text: String, btn_size: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = btn_size
+	b.add_theme_font_size_override("font_size", 22)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.14, 0.22, 0.96)
+	sb.border_color = Color(0.72, 0.60, 0.35, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(8)
+	b.add_theme_stylebox_override("normal", sb)
+	var sh := sb.duplicate() as StyleBoxFlat
+	sh.bg_color = Color(0.18, 0.24, 0.36, 0.98)
+	b.add_theme_stylebox_override("hover", sh)
+	var sp := sb.duplicate() as StyleBoxFlat
+	sp.bg_color = Color(0.06, 0.09, 0.14, 0.98)
+	b.add_theme_stylebox_override("pressed", sp)
+	b.add_theme_color_override("font_color", Color("#ffe9b0"))
+	return b
+
+
+func _show_start_screen() -> void:
+	if start_overlay == null:
+		_build_start_overlay()
+	start_overlay.visible = true
+	_layout_start_overlay()
+
+
+func _build_start_overlay() -> void:
+	start_overlay = Control.new()
+	start_overlay.z_index = 1500
+	start_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	start_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(start_overlay)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.03, 0.07, 0.94)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	start_overlay.add_child(dim)
+
+	var emblem := TextureRect.new()
+	emblem.name = "Emblem"
+	emblem.texture = load(PLAYER_TEXTURE)
+	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	start_overlay.add_child(emblem)
+
+	var title := Label.new()
+	title.name = "Title"
+	title.text = "大肥鱼传说"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 62)
+	title.add_theme_color_override("font_color", Color("#ffe9b0"))
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	title.add_theme_constant_override("outline_size", 10)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	start_overlay.add_child(title)
+
+	var sub := Label.new()
+	sub.name = "Sub"
+	sub.text = "卡牌对战 · 鲸娘 VS 奶龙"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 20)
+	sub.add_theme_color_override("font_color", Color("#9fb3c8"))
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	start_overlay.add_child(sub)
+
+	var box := VBoxContainer.new()
+	box.name = "Buttons"
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 14)
+	start_overlay.add_child(box)
+	var start_btn := _make_menu_button("开始游戏", Vector2(260, 58))
+	start_btn.pressed.connect(_on_start_pressed)
+	box.add_child(start_btn)
+	var set_btn := _make_menu_button("设置", Vector2(260, 52))
+	set_btn.pressed.connect(_open_settings)
+	box.add_child(set_btn)
+	var quit_btn := _make_menu_button("退出", Vector2(260, 52))
+	quit_btn.pressed.connect(func(): get_tree().quit())
+	box.add_child(quit_btn)
+
+
+func _layout_start_overlay() -> void:
+	if start_overlay == null:
+		return
+	var w := size.x
+	var h := size.y
+	var emblem := start_overlay.get_node_or_null("Emblem") as TextureRect
+	if emblem != null:
+		emblem.size = Vector2(220, 228)
+		emblem.position = Vector2(w * 0.5 - 110.0, h * 0.09)
+	var title := start_overlay.get_node_or_null("Title") as Label
+	if title != null:
+		title.size = Vector2(w, 80.0)
+		title.position = Vector2(0.0, h * 0.09 + 224.0)
+	var sub := start_overlay.get_node_or_null("Sub") as Label
+	if sub != null:
+		sub.size = Vector2(w, 30.0)
+		sub.position = Vector2(0.0, h * 0.09 + 304.0)
+	var box := start_overlay.get_node_or_null("Buttons") as VBoxContainer
+	if box != null:
+		box.size = Vector2(260, 192)
+		box.position = Vector2(w * 0.5 - 130.0, h * 0.09 + 350.0)
+
+
+func _on_start_pressed() -> void:
+	if start_overlay != null:
+		start_overlay.visible = false
+	_start_battle()
+
+
+func _open_settings() -> void:
+	if settings_panel == null:
+		_build_settings_panel()
+	settings_panel.visible = true
+	settings_panel.size = Vector2(440, 300)
+	settings_panel.position = Vector2((size.x - 440.0) * 0.5, (size.y - 300.0) * 0.5)
+
+
+func _build_settings_panel() -> void:
+	settings_panel = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.06, 0.11, 0.985)
+	sb.border_color = Color(0.72, 0.60, 0.35, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(14)
+	sb.set_content_margin_all(22)
+	settings_panel.add_theme_stylebox_override("panel", sb)
+	settings_panel.z_index = 1600
+	settings_panel.visible = false
+	settings_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(settings_panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 16)
+	settings_panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "设置"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color("#ffe9b0"))
+	box.add_child(title)
+
+	var music_row := _make_slider_row("音乐音量", _music_vol)
+	music_slider = music_row["slider"]
+	music_value_label = music_row["value"]
+	music_slider.value_changed.connect(_on_music_volume_changed)
+	box.add_child(music_row["row"])
+
+	var sfx_row := _make_slider_row("音效音量", _sfx_vol)
+	sfx_slider = sfx_row["slider"]
+	sfx_value_label = sfx_row["value"]
+	sfx_slider.value_changed.connect(_on_sfx_volume_changed)
+	box.add_child(sfx_row["row"])
+
+	var close_btn := _make_menu_button("关闭", Vector2(200, 48))
+	close_btn.add_theme_font_size_override("font_size", 18)
+	close_btn.pressed.connect(func(): settings_panel.visible = false)
+	var center := CenterContainer.new()
+	center.add_child(close_btn)
+	box.add_child(center)
+
+
+func _make_slider_row(label_text: String, initial: float) -> Dictionary:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.custom_minimum_size = Vector2(360, 46)
+	var lab := Label.new()
+	lab.text = label_text
+	lab.add_theme_font_size_override("font_size", 17)
+	lab.add_theme_color_override("font_color", Color("#cfe3ff"))
+	lab.custom_minimum_size = Vector2(96, 0)
+	row.add_child(lab)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 100.0
+	slider.step = 1.0
+	slider.custom_minimum_size = Vector2(190, 24)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.set_value_no_signal(clampf(initial, 0.0, 1.0) * 100.0)
+	row.add_child(slider)
+	var val := Label.new()
+	val.text = "%d%%" % int(round(clampf(initial, 0.0, 1.0) * 100.0))
+	val.custom_minimum_size = Vector2(52, 0)
+	val.add_theme_font_size_override("font_size", 16)
+	val.add_theme_color_override("font_color", Color("#ffd479"))
+	row.add_child(val)
+	return {"row": row, "slider": slider, "value": val}
+
+
+func _on_music_volume_changed(v: float) -> void:
+	_music_vol = clampf(v / 100.0, 0.0, 1.0)
+	if music_value_label != null:
+		music_value_label.text = "%d%%" % int(round(v))
+	var m := get_node_or_null("/root/Music")
+	if m != null:
+		m.set_volume_linear(_music_vol)
+	_save_settings()
+
+
+func _on_sfx_volume_changed(v: float) -> void:
+	_sfx_vol = clampf(v / 100.0, 0.0, 1.0)
+	if sfx_value_label != null:
+		sfx_value_label.text = "%d%%" % int(round(v))
+	var s := get_node_or_null("/root/Sfx")
+	if s != null:
+		s.set_volume_linear(_sfx_vol)
+		s.play("seekseek", -6.0)
+	_save_settings()
+
+
+func _load_settings() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		_music_vol = clampf(float(cfg.get_value("audio", "music", 0.8)), 0.0, 1.0)
+		_sfx_vol = clampf(float(cfg.get_value("audio", "sfx", 0.8)), 0.0, 1.0)
+	var m := get_node_or_null("/root/Music")
+	if m != null:
+		m.set_volume_linear(_music_vol)
+	var s := get_node_or_null("/root/Sfx")
+	if s != null:
+		s.set_volume_linear(_sfx_vol)
+
+
+func _save_settings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("audio", "music", _music_vol)
+	cfg.set_value("audio", "sfx", _sfx_vol)
+	cfg.save(SETTINGS_PATH)
+
+
+## 开始界面 / 设置面板是否遮住了战斗界面
+func _ui_blocking() -> bool:
+	return (start_overlay != null and start_overlay.visible) \
+		or (settings_panel != null and settings_panel.visible)
+
+
+func _show_status_tip(anchor: Control, title: String, desc: String) -> void:
+	if status_tip == null or not is_instance_valid(anchor):
+		return
+	status_tip_label.text = "[b][color=#ffe9b0]%s[/color][/b]\n[color=#cfe3ff]%s[/color]" % [title, desc]
+	status_tip_label.custom_minimum_size = Vector2(260, 0)
+	status_tip_label.size = Vector2(260, 0)
+	var content_h := maxf(status_tip_label.get_content_height(), 36.0)
+	status_tip_label.custom_minimum_size = Vector2(260, content_h)
+	status_tip_label.size = Vector2(260, content_h)
+	status_tip.size = Vector2(284, content_h + 20.0)
+	status_tip.visible = true
+
+	var rect := anchor.get_global_rect()
+	var center := Vector2(rect.position.x + rect.size.x * 0.5, rect.position.y - 8.0)
+	var local := get_global_transform().affine_inverse() * center
+	var max_x := maxf(8.0, size.x - status_tip.size.x - 8.0)
+	status_tip.position = Vector2(
+		clampf(local.x - status_tip.size.x * 0.5, 8.0, max_x),
+		clampf(local.y - status_tip.size.y, 8.0, size.y - status_tip.size.y - 8.0)
+	)
+
+
+func _hide_status_tip() -> void:
+	if status_tip != null:
+		status_tip.visible = false
 
 
 ## 角色头顶信息面板：名字 + 红色生命条 + 图标行（盾/状态）+（敌人）意图
@@ -413,11 +726,13 @@ func _build_head_panel(is_enemy: bool, name_color: Color) -> Dictionary:
 	}
 
 
-## 状态图标：图标 + 右下角数值
-func _make_status_icon(tex_path: String, value: int, color: Color) -> Control:
+## 状态图标：图标 + 右下角数值（悬停显示说明）
+func _make_status_icon(tex_path: String, value: int, color: Color, title: String, desc: String) -> Control:
 	var holder := Control.new()
 	holder.custom_minimum_size = Vector2(46.0, 42.0)
-	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.mouse_filter = Control.MOUSE_FILTER_STOP
+	holder.mouse_entered.connect(_show_status_tip.bind(holder, title, desc))
+	holder.mouse_exited.connect(_hide_status_tip)
 	var icon := TextureRect.new()
 	icon.texture = load(tex_path)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -446,13 +761,17 @@ func _rebuild_status_icons(row: HBoxContainer, block: int, vuln: int, weak: int,
 	for child in row.get_children():
 		child.queue_free()
 	if block > 0:
-		row.add_child(_make_status_icon(ICON_SHIELD, block, Color("#dff2ff")))
+		row.add_child(_make_status_icon(ICON_SHIELD, block, Color("#dff2ff"),
+			"格挡 %d" % block, "抵挡接下来受到的 %d 点伤害，回合结束时清零。" % block))
 	if vuln > 0:
-		row.add_child(_make_status_icon(ICON_VULNERABLE, vuln, Color("#ff9d9d")))
+		row.add_child(_make_status_icon(ICON_VULNERABLE, vuln, Color("#ff9d9d"),
+			"易伤 %d" % vuln, "受到的伤害 ×1.5。每回合结束层数 -1。"))
 	if weak > 0:
-		row.add_child(_make_status_icon(ICON_WEAK, weak, Color("#d3b0ff")))
+		row.add_child(_make_status_icon(ICON_WEAK, weak, Color("#d3b0ff"),
+			"虚弱 %d" % weak, "造成的伤害 ×0.75。每回合结束层数 -1。"))
 	if poison > 0:
-		row.add_child(_make_status_icon(ICON_POISON, poison, Color("#9dffa0")))
+		row.add_child(_make_status_icon(ICON_POISON, poison, Color("#9dffa0"),
+			"中毒 %d" % poison, "自己回合开始时失去 %d 点生命（无视格挡），然后层数 -1。" % poison))
 
 
 ## 更新生命条填充宽度与颜色（血越少越亮红）
@@ -535,6 +854,10 @@ func _layout_stage() -> void:
 	result_label.position = Vector2(0.0, h * 0.38)
 
 	_layout_hand()
+	_layout_start_overlay()
+	if settings_panel != null and settings_panel.visible:
+		settings_panel.size = Vector2(440, 300)
+		settings_panel.position = Vector2((size.x - 440.0) * 0.5, (size.y - 300.0) * 0.5)
 
 
 func _layout_hand() -> void:
@@ -696,6 +1019,10 @@ func _refresh() -> void:
 	var intent_text := "意图：%s（格挡 +%d）" % [str(it.get("name", "")), intent_value]
 	if str(it.get("type", "")) == "attack":
 		intent_text = "意图：%s（%d 伤害）" % [str(it.get("name", "")), intent_value]
+	elif str(it.get("type", "")) == "attack_multi":
+		intent_text = "意图：%s（%d×%d 伤害）" % [
+			str(it.get("name", "")), intent_value, int(it.get("hits", 2))
+		]
 	enemy_intent_label.text = intent_text
 	energy_label.text = "大米饭 %d / %d" % [state.energy, state.MAX_ENERGY]
 	turn_label.text = "第 %d 回合 · 抽牌堆 %d · 弃牌堆 %d" % [
@@ -877,7 +1204,7 @@ func _on_card_unhover(_index: int, node: Button) -> void:
 
 ## 根据光标在手牌区的水平位置选最近的牌作为悬停目标
 func _update_hand_hover() -> void:
-	if _busy or _dragging or _draw_animating or hand_area == null:
+	if _busy or _dragging or _draw_animating or hand_area == null or _ui_blocking():
 		return
 	var mouse := hand_area.get_local_mouse_position()
 	var zone := Rect2(
@@ -1379,7 +1706,7 @@ func _input(event: InputEvent) -> void:
 			return
 	# 悬停判定按"手牌区里离光标最近的牌"来算，不依赖卡片的 enter/exit，
 	# 这样卡片抬起离开光标下方也不会丢失悬停（否则会 enter/exit 抖动）。
-	if event is InputEventMouseMotion and not _dragging:
+	if event is InputEventMouseMotion and not _dragging and not _ui_blocking():
 		_update_hand_hover()
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
@@ -1391,8 +1718,11 @@ func _input(event: InputEvent) -> void:
 		if music != null and music.has_method("toggle_mute"):
 			music.toggle_mute()
 		get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and _is_fullscreen():
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	elif event.keycode == KEY_ESCAPE:
+		if settings_panel != null and settings_panel.visible:
+			settings_panel.visible = false
+		elif _is_fullscreen():
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 		get_viewport().set_input_as_handled()
 
 

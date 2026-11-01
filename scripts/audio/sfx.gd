@@ -20,9 +20,16 @@ const VOICES := 8
 
 var enabled := true
 var volume_db := -6.0
+## 0.0 ~ 1.0 的用户音效音量（1.0 = volume_db）
+var volume_linear := 1.0
 
 var _players: Array[AudioStreamPlayer] = []
 var _cache: Dictionary = {}
+
+
+## 设置音效音量（0~1），设置面板用
+func set_volume_linear(value: float) -> void:
+	volume_linear = clampf(value, 0.0, 1.0)
 
 
 func _ready() -> void:
@@ -35,14 +42,14 @@ func _ready() -> void:
 
 ## 播放一个音效。name 不带扩展名。找不到文件就直接返回。
 func play(name: String, volume_offset_db := 0.0) -> void:
-	if not enabled or name.is_empty():
+	if not enabled or name.is_empty() or volume_linear <= 0.001:
 		return
 	var stream := _load_stream(name)
 	if stream == null:
 		return
 	var player := _pick_player()
 	player.stream = stream
-	player.volume_db = volume_db + volume_offset_db
+	player.volume_db = volume_db + linear_to_db(volume_linear) + volume_offset_db
 	player.play()
 
 

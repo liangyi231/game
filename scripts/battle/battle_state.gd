@@ -20,14 +20,15 @@ const CardDB := preload("res://scripts/cards/card_db.gd")
 const MAX_ENERGY := 3
 const HAND_SIZE := 5
 const PLAYER_MAX_HP := 70
-const ENEMY_MAX_HP := 45
+const ENEMY_MAX_HP := 80
 
-## 敌人意图循环
+## 敌人意图循环（加强了：血更厚、伤害更高、加入多段攻击）
 const ENEMY_INTENTS := [
-	{"name": "糖浆雨", "type": "attack", "value": 8},
-	{"name": "奶泡膨胀", "type": "defend", "value": 6},
-	{"name": "糖晶暴食", "type": "attack", "value": 12},
-	{"name": "糖浆雨", "type": "attack", "value": 8},
+	{"name": "糖浆雨", "type": "attack", "value": 10},
+	{"name": "奶泡膨胀", "type": "defend", "value": 10},
+	{"name": "糖晶暴食", "type": "attack", "value": 16},
+	{"name": "糖浆连击", "type": "attack_multi", "value": 6, "hits": 2},
+	{"name": "奶泡膨胀", "type": "defend", "value": 10},
 ]
 
 var draw_pile: Array[String] = []
@@ -191,6 +192,19 @@ func enemy_turn() -> Dictionary:
 		logged.emit("[color=#ff9d9d]奶龙使用【%s】，造成 %d 点伤害。[/color]" % [str(act.get("name", "")), real])
 		_damage_player(real)
 		result["damage"] = before - player_hp
+	elif result["type"] == "attack_multi":
+		var hits := int(act.get("hits", 2))
+		var before := player_hp
+		var total := 0
+		for i in hits:
+			var real := _incoming_damage(value, "enemy", "player")
+			total += real
+			_damage_player(real)
+		logged.emit("[color=#ff9d9d]奶龙使用【%s】，连续 %d 次造成共 %d 点伤害。[/color]" % [
+			str(act.get("name", "")), hits, total
+		])
+		result["damage"] = before - player_hp
+		result["hits"] = hits
 	elif result["type"] == "defend":
 		enemy_block += value
 		logged.emit("[color=#ff9d9d]奶龙使用【%s】，获得 %d 点格挡。[/color]" % [str(act.get("name", "")), value])
