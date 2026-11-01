@@ -56,6 +56,8 @@ var restart_button: Button
 var card_tip: PanelContainer
 var card_tip_label: RichTextLabel
 var fx_layer: Control
+## 软圆点贴图（火星/光斑粒子用，运行时生成，不占美术资源）
+var _soft_dot: Texture2D
 
 var _card_nodes: Array[Button] = []
 var _card_base: Dictionary = {}
@@ -661,6 +663,7 @@ func _on_card_hover(index: int, node: Button) -> void:
 		return
 	# 切换悬停：先把上一张恢复，否则被打断的 tween 会把它卡在半空
 	if _hover_node != null and is_instance_valid(_hover_node):
+		_fade_glow(_hover_node, 0.0, 0.12)
 		_restore_card(_hover_node, 0.16)
 	_hover_node = node
 	card_tip.visible = false
@@ -701,6 +704,7 @@ func _update_hand_hover() -> void:
 	)
 	if not zone.has_point(mouse):
 		if _hover_node != null and is_instance_valid(_hover_node):
+			_fade_glow(_hover_node, 0.0, 0.12)
 			_hover_node = null
 			_restore_neighbors()
 			card_tip.visible = false
@@ -830,8 +834,11 @@ func _push_neighbors(hover_index: int, hover_node: Button) -> void:
 		var push := NEIGHBOR_PUSH * clampf(1.0 - float(dist) / 3.0, 0.0, 1.0)
 		var dir := -1.0 if j < hover_index else 1.0
 		_kill_card_tween(other)
-		var t := other.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		var t := other.create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		t.tween_property(other, "position", (base["pos"] as Vector2) + Vector2(dir * push, 0.0), 0.18)
+		# 同时把缩放/旋转归位：否则上一张悬停牌的缩小 tween 会被这里杀掉而一直保持放大
+		t.tween_property(other, "scale", Vector2.ONE, 0.18)
+		t.tween_property(other, "rotation_degrees", float(base["rot"]), 0.18)
 		_card_tweens[other] = t
 
 
@@ -950,7 +957,9 @@ func _play_card_burn(id: String, start_rect: Rect2) -> void:
 	flash.tween_property(visual, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.07)
 	await flash.finished
 
-	# 4) 焚烧：变橙红、放大、上飘、淡出
+	# 4) 焚烧：变橙红、放大、上飘、淡出（带火星粒子）
+	var burn_center := get_global_transform().affine_inverse() * visual.get_global_rect().get_center()
+	_spawn_burn_fx(burn_center)
 	var burn := create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	burn.tween_property(visual, "modulate", Color(2.6, 0.6, 0.1, 0.0), 0.45)
 	burn.tween_property(visual, "scale", Vector2(1.95, 1.95), 0.45)
@@ -1025,8 +1034,87 @@ func _sfx(sound: String) -> void:
 		player.play(sound)
 
 
-# ---------------------------------------------------------------- 受击特效
+# ---------------------------------------------------------------- 焚烧粒子
 
+## 运行时生成径向渐变的软圆点，用作火星/光斑（不占美术资源）
+func _make_soft_dot() -> Texture2D:
+	if _soft_dot != null:
+		return _soft_dot
+	var grad := Gradient.new()
+	grad.colors = PackedColorArray([Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
+	grad.offsets = PackedFloat32Array([0.0, 1.0])
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.width = 48
+	tex.height = 48
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	_soft_dot = tex
+	return _soft_dot
+
+
+## 焚烧粒子：中心爆闪 + 飞散火星 + 上飘余烬
+func _spawn_burn_fx(center: Vector2) -> void:
+	if fx_layer == null:
+		return
+	var dot := _make_soft_dot()
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	# 中心爆闪
+	var ring := TextureRect.new()
+	ring.texture = dot
+	ring.size = Vector2(90, 90)
+	ring.position = center - Vector2(45, 45)
+	ring.modulate = Color(1.0, 0.75, 0.28, 0.95)
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ring.z_index = 960
+	fx_layer.add_child(ring)
+	var rt := ring.create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	rt.tween_property(ring, "scale", Vector2(3.4, 3.4), 0.5)
+	rt.tween_property(ring, "modulate:a", 0.0, 0.5)
+	rt.chain().tween_callback(ring.queue_free)
+
+	# 飞散火星
+	for i in 24:
+		var spark := TextureRect.new()
+		spark.texture = dot
+		var s := rng.randf_range(7.0, 18.0)
+		spark.size = Vector2(s, s)
+		spark.position = center + Vector2(rng.randf_range(-64, 64), rng.randf_range(-80, 70)) - Vector2(s, s) * 0.5
+		spark.modulate = Color(1.0, rng.randf_range(0.5, 0.95), 0.15, 1.0)
+		spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spark.z_index = 955
+		fx_layer.add_child(spark)
+		var dur := rng.randf_range(0.4, 0.8)
+		var rise := rng.randf_range(90.0, 230.0)
+		var drift := rng.randf_range(-90.0, 90.0)
+		var st := spark.create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		st.tween_property(spark, "position", spark.position + Vector2(drift, -rise), dur)
+		st.tween_property(spark, "scale", Vector2(0.15, 0.15), dur)
+		st.tween_property(spark, "modulate:a", 0.0, dur * 0.85).set_delay(dur * 0.2)
+		st.chain().tween_callback(spark.queue_free)
+
+	# 上飘余烬（更小更慢）
+	for i in 12:
+		var ember := TextureRect.new()
+		ember.texture = dot
+		var es := rng.randf_range(4.0, 9.0)
+		ember.size = Vector2(es, es)
+		ember.position = center + Vector2(rng.randf_range(-46, 46), rng.randf_range(-40, 40))
+		ember.modulate = Color(1.0, rng.randf_range(0.35, 0.6), 0.08, 0.9)
+		ember.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ember.z_index = 950
+		fx_layer.add_child(ember)
+		var edur := rng.randf_range(0.7, 1.1)
+		var et := ember.create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		et.tween_property(ember, "position", ember.position + Vector2(rng.randf_range(-40, 40), -rng.randf_range(60, 140)), edur)
+		et.tween_property(ember, "modulate:a", 0.0, edur * 0.9).set_delay(edur * 0.25)
+		et.chain().tween_callback(ember.queue_free)
+
+
+# ---------------------------------------------------------------- 受击特效
 ## 受击：变红 + 掉血数字 + hurt 音效
 func _on_damaged(target: String, amount: int) -> void:
 	_sfx("hurt")
