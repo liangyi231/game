@@ -509,7 +509,7 @@ func _on_card_pressed(index: int) -> void:
 
 	# 先飞到屏幕中央烧掉，再结算效果
 	await _play_card_burn(id, start_rect)
-	_sfx("deepdepp")
+	_sfx("seek")
 	state.play_card(index)
 	_busy = false
 	_refresh()
@@ -554,7 +554,8 @@ func _on_end_turn() -> void:
 	_set_enemy_pose(true)
 	await get_tree().create_timer(0.45).timeout
 
-	_sfx("deepdepp")
+	# 奶龙行动音效（大笑）；掉血时 damaged 信号播 seekseek
+	_sfx("laugh")
 	state.enemy_turn()
 
 	await get_tree().create_timer(0.85).timeout
