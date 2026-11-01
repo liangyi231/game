@@ -2,26 +2,29 @@ param(
     [string]$Message = ""
 )
 
-# 每轮迭代结束后调用：把当前改动全部暂存并提交。
-# 用法：pwsh -File tools/git-auto-commit.ps1 "feat: 本轮做了什么"
-#       pwsh -File tools/git-auto-commit.ps1        （自动生成时间戳信息）
+# Auto-commit at the end of each iteration.
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "feat: summary"
+#        powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1   (timestamp message)
+#
+# Note: messages are ASCII on purpose. This machine only has Windows PowerShell 5.1,
+# which decodes BOM-less UTF-8 scripts as ANSI; keep the script body ASCII-safe.
+# Chinese commit messages still work when passed from the command line.
 
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 $status = git status --porcelain
 if (-not $status) {
-    Write-Output "没有未提交的改动，跳过。"
+    Write-Output "No changes to commit."
     exit 0
 }
 
 git add -A
 if ([string]::IsNullOrWhiteSpace($Message)) {
     $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $Message = "chore: 自动提交 $stamp"
+    $Message = "chore: auto commit $stamp"
 }
 
 git commit -q -m $Message
 $hash = git rev-parse --short HEAD
-$files = (git ls-files --modified --others --exclude-standard | Measure-Object).Count
-Write-Output "已提交 $hash —— $Message"
+Write-Output ("Committed " + $hash + " - " + $Message)

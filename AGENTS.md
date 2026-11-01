@@ -5,8 +5,11 @@
 **规则：每次完成一轮改动（本轮最后一次验证通过后），立即执行：**
 
 ```powershell
-pwsh -File tools/git-auto-commit.ps1 "feat|fix|docs|art|chore: 本轮摘要"
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "feat: 本轮摘要"
 ```
+
+> 本机没有 `pwsh`，只有 `powershell.exe`（5.1），命令里别用 `pwsh`。
+> 等价的手工命令：`git add -A` 然后 `git commit -m "feat: 本轮摘要"`。
 
 - 提交信息用中文，格式 `类型: 摘要`，类型取 `feat / fix / docs / art / chore`
 - 摘要写「这轮改了什么、验证结果」，一行说清
