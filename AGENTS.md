@@ -32,7 +32,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "f
 - 敌人：`art/enemies/nailong_idle.png` / `nailong_action.png`（同画布两帧）
 - 卡面：`art/ui/card_face.jpg`；背景：`art/bg/night_sky.jpg`
 - 抠图/音效脚本在 `tools/`，可复现；原始素材保留在 `art/**/*_src*` 与 `art/characters/main_char_ref.jpg`
-- 音频：`audio/sfx/`（`seek`=玩家出牌、`laugh`=奶龙行动、`seekseek`=受击）；`audio/music/bgm.ogg` 是循环 BGM，替换同名文件即生效
+- 音频：`audio/sfx/`（`seek`=玩家出牌、`laugh`=奶龙行动、`hurt`=受击）；`audio/music/bgm.ogg` 是循环 BGM，替换同名文件即生效
 
 ## 文档
 

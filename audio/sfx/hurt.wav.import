@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://dusq20rrdslt5"
-path="res://.godot/imported/deepdepp.wav-a30098f3d6d8bd37a02ad8b1ceec7e79.sample"
+uid="uid://dn10c3wnigiho"
+path="res://.godot/imported/hurt.wav-070a1d90b4f20e0190267ae2225dc033.sample"
 
 [deps]
 
-source_file="res://audio/sfx/deepdepp.wav"
-dest_files=["res://.godot/imported/deepdepp.wav-a30098f3d6d8bd37a02ad8b1ceec7e79.sample"]
+source_file="res://audio/sfx/hurt.wav"
+dest_files=["res://.godot/imported/hurt.wav-070a1d90b4f20e0190267ae2225dc033.sample"]
 
 [params]
 

@@ -554,7 +554,7 @@ func _on_end_turn() -> void:
 	_set_enemy_pose(true)
 	await get_tree().create_timer(0.45).timeout
 
-	# 奶龙行动音效（大笑）；掉血时 damaged 信号播 seekseek
+	# 奶龙行动音效（大笑）；掉血时 damaged 信号播 hurt
 	_sfx("laugh")
 	state.enemy_turn()
 
@@ -611,8 +611,9 @@ func _sfx(sound: String) -> void:
 
 # ---------------------------------------------------------------- 受击特效
 
+## 受击：变红 + 掉血数字 + hurt 音效
 func _on_damaged(target: String, amount: int) -> void:
-	_sfx("seekseek")
+	_sfx("hurt")
 	var pic: TextureRect = enemy_pic if target == "enemy" else player_pic
 	_flash(pic)
 	_spawn_damage_number(pic, amount)
