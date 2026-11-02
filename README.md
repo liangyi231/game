@@ -30,6 +30,19 @@
 godot --path .
 ```
 
+## 上传到 GitHub
+
+仓库远程：`https://github.com/liangyi231/game`（分支 `main`）。
+
+第一次推送需要登录 GitHub 一次（凭据由 Git Credential Manager 保存，之后不再问）：
+
+- **最简单**：双击 `tools/推送到GitHub.bat`，弹窗里用浏览器登录 GitHub，登录完自动推送并打开仓库页。
+- 或在项目目录执行：`git push origin main`
+- 或用 GitHub Desktop：Add existing repository → Push origin。
+
+> 注意：`dist/` 里的打包产物（约 48 MB 的 exe、网页版 zip）默认**不进仓库**。
+> 想把 exe 也放到 GitHub，用仓库的 **Releases** 页面手动上传附件即可（仓库网页 → Releases → Draft a new release），不要把大文件提交进 git 历史。
+
 ## 打包分享
 
 见 [`docs/分享给朋友.md`](docs/分享给朋友.md)：
