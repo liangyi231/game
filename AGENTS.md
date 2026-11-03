@@ -13,8 +13,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "f
 
 - 提交信息用中文，格式 `类型: 摘要`，类型取 `feat / fix / docs / art / chore`
 - 摘要写「这轮改了什么、验证结果」，一行说清
-- 远程是 GitHub `https://github.com/liangyi231/game.git`（分支 `main`），但作者要求**只提交到本地，不要自动 push**
-- 需要同步远程时由作者自己执行 `git push`；AI 不要主动推送，也不要索要账号、密码或 Token
+- 远程是 GitHub `https://github.com/liangyi231/game.git`（分支 `main`），**已设置上游跟踪，凭据由 Git Credential Manager 记住**（2026-11-03 首次登录后不再询问）
+- 默认仍然只做本地提交；作者明确说「上传 / 推送」时才执行 `git push`（直接 `git push` 即可，不需要再带参数）
+- 不要主动索要账号、密码或 Token；凭据缺失时提示作者运行 `tools/推送到GitHub.bat` 登录一次
 - 不要手动 `git add .godot` 之类：`.gitignore` 已排除缓存与本机工具链
 
 ## 工程约定
@@ -42,7 +43,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/git-auto-commit.ps1 "f
 
 ## git 身份
 
-目前是本仓库占位身份 `a <a@local>`。要推到 GitHub 前先改：
+本仓库已设置 `liangyi231 <liangyi231@users.noreply.github.com>`（与 GitHub 账号对应，提交可正确归属）。
+如需修改：
 
 ```powershell
 git config user.name "你的名字"
