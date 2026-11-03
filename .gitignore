@@ -17,4 +17,5 @@ audio/separated/
 Thumbs.db
 Desktop.ini
 *.tmp
+.tmp*
 *.log
